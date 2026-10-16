@@ -13,7 +13,7 @@
  *   gongwen where                                                  打印本工具包所在目录
  *
  * 只做分派：new、fix、pdf 转给 tools/ 里的原脚本，参数、输出、退出码原样透传；
- * check 直接调核心库的 runChecks，与出稿时自动跑的机检链是同一份实现。
+ * check 直接调 lib/run-checks.js 的 runChecks，与出稿时自动跑的机检链是同一份实现。
  */
 "use strict";
 const path = require("path");
@@ -50,7 +50,7 @@ switch (cmd) {
     let r;
     try {
       if (!file) throw new Error("缺少文件名。用法：gongwen check 稿子.docx [--strict] [--json]");
-      r = require("../lib/gongwen-core").runChecks(file, rest.includes("--strict"), { json });
+      r = require("../lib/run-checks").runChecks(file, rest.includes("--strict"), { json });
     } catch (e) {
       if (!json) {
         if (!file) usage();

@@ -44,12 +44,12 @@ async function bodyOf(file) {
     process.exit(2);
   }
   const body = raw.replace(/「[^」\n]*」/g, "　").replace(/“[^”\n]*”/g, "　");
-  const { norm, style, normRules, styleRules } = scan(body);
+  const { norm, style, normHits, styleHits } = scan(body);
   if (process.argv.includes("--json")) {
-    const row = (blocking, rules) => (l, i) => ({ rule: rules[i], detail: l, blocking });
+    const row = (blocking) => (h) => ({ rule: h.rule, detail: h.text, blocking });
     console.log(JSON.stringify({
       check: "文风", file: name,
-      hits: [...norm.map(row(true, normRules)), ...style.map(row(false, styleRules))],
+      hits: [...normHits.map(row(true)), ...styleHits.map(row(false))],
     }));
     // 不调 process.exit：stdout 是管道时，输出较大会在刷完之前被截断
     if (norm.length && strict) process.exitCode = 1;

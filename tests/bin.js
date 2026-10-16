@@ -55,6 +55,8 @@ r = gw("check", "a.docx", "--json");
 assert.strictEqual(r.status, 0, "--json 通过时应返回 0");
 let rep = JSON.parse(r.stdout);
 assert.strictEqual(rep.status, "pass");
+// agent 的 shell 常把 stdout 与 stderr 合并，--json 通过时 stderr 必须为空，否则合并后解析不了
+assert.strictEqual(r.stderr, "", "check --json 通过时 stderr 应为空：" + r.stderr);
 assert.deepStrictEqual(rep.checks.map((c) => c.check), ["体例", "数字自洽", "文风"]);
 
 assert.strictEqual(gw("new", "--form", "wen", "--out", "b.js", "--title", "关于筹画工作的通知").status, 0);

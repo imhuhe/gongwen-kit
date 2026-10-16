@@ -22,7 +22,11 @@ const put = (rel, text = "x\n") => {
   fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true });
   fs.writeFileSync(path.join(repo, rel), text);
 };
-const git = (...a) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...a], { cwd: repo, stdio: "pipe" });
+// 只依赖自己造的环境：关掉签名和全局钩子，免得开发者的 git 配置让这条测试无关地失败
+const noHooks = path.join(base, "nohooks");
+fs.mkdirSync(noHooks);
+const git = (...a) =>
+  execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-c", `core.hooksPath=${noHooks}`, ...a], { cwd: repo, stdio: "pipe" });
 const pack = (...extra) =>
   spawnSync(process.execPath, [PACK, "--root", repo, "--skip-install", "--out", outDir, ...extra], { encoding: "utf8" });
 
@@ -65,9 +69,27 @@ put("tests/t.js", "changed\n");
 assert.strictEqual(pack().status, 0, "只有被排除目录里的改动时不应拒绝");
 git("checkout", "--", "tests/t.js");
 
+// 3b. 重命名：点名新旧两个路径，不能把旧路径切碎
+git("mv", "docs/说明.md", "docs/说明2.md");
+r = pack();
+assert.notStrictEqual(r.status, 0, "有未提交的重命名时应拒绝");
+assert.ok(r.stderr.includes("docs/说明2.md") && r.stderr.includes("docs/说明.md"), "重命名的新旧路径都要点名：" + r.stderr);
+git("mv", "docs/说明2.md", "docs/说明.md");
+
+// 3c. 参数与环境错误给一句人话，不抛堆栈
+r = spawnSync(process.execPath, [PACK, "--root", repo, "--out", "--allow-dirty"], { encoding: "utf8" });
+assert.strictEqual(r.status, 2, "--out 后面缺值应返回 2");
+assert.ok(r.stderr.includes("--out 后面要跟一个目录") && !r.stderr.includes("    at "), "应给一句话而不是堆栈：" + r.stderr);
+const notRepo = path.join(base, "notrepo");
+fs.mkdirSync(notRepo);
+fs.writeFileSync(path.join(notRepo, "package.json"), JSON.stringify({ version: "1.0.0" }));
+r = spawnSync(process.execPath, [PACK, "--root", notRepo, "--skip-install", "--out", outDir], { encoding: "utf8" });
+assert.strictEqual(r.status, 2, "非 git 目录应返回 2");
+assert.ok(r.stderr.includes("不是 git 仓库") && !r.stderr.includes("    at "), "应给一句话而不是堆栈：" + r.stderr);
+
 // 4. --allow-dirty 放行
 put("lib/another.js");
 assert.strictEqual(pack().status === 0, false);
 assert.strictEqual(pack("--allow-dirty").status, 0, "--allow-dirty 应放行");
 
-console.log("离线打包测试通过（文件选择、排除项、脏工作区拒绝、--allow-dirty）");
+console.log("离线打包测试通过（文件选择、排除项、脏工作区与重命名拒绝、参数与非 git 目录报错、--allow-dirty）");

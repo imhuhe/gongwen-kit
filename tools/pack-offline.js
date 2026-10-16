@@ -23,7 +23,13 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 
 const args = process.argv.slice(2);
-const opt = (k) => (args.includes(k) ? args[args.indexOf(k) + 1] : undefined);
+const die = (msg) => { console.error(msg); process.exit(2); };
+const opt = (k) => {
+  if (!args.includes(k)) return undefined;
+  const v = args[args.indexOf(k) + 1];
+  if (!v || v.startsWith("--")) die(`${k} 后面要跟一个目录`);
+  return v;
+};
 const ROOT = path.resolve(opt("--root") || path.join(__dirname, ".."));
 const outDir = path.resolve(opt("--out") || process.cwd());
 const allowDirty = args.includes("--allow-dirty");
@@ -32,12 +38,25 @@ const version = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf
 const name = `gongwen-kit-v${version}`;
 const exclude = [/^assets\//, /^docs\/样张\//, /^\.github\//, /^tests\//, /^AGENTS\.md$/];
 const kept = (f) => f && !exclude.some((re) => re.test(f));
-const git = (...a) => execFileSync("git", a, { cwd: ROOT, encoding: "utf8" });
+const git = (...a) => execFileSync("git", a, { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+
+try {
+  git("rev-parse", "--show-toplevel");
+} catch {
+  die("这里不是 git 仓库：打包要在完整仓库里做（离线包本身不能再打包）。");
+}
 
 if (!allowDirty) {
-  // -z：路径不加引号转义；每项前三个字符是状态码和空格
-  const dirty = git("status", "--porcelain", "-z", "--untracked-files=all")
-    .split("\0").map((e) => e.slice(3)).filter(kept);
+  // -z：路径不加引号转义；每项是「两位状态码、空格、路径」。状态含 R 或 C（重命名、复制）时，
+  // 紧跟的下一项是旧路径，只有路径、没有状态码，要整体取下来，不能再切前三个字符
+  const entries = git("status", "--porcelain", "-z", "--untracked-files=all").split("\0");
+  const paths = [];
+  for (let i = 0; i < entries.length; i++) {
+    if (!entries[i]) continue;
+    paths.push(entries[i].slice(3));
+    if (/[RC]/.test(entries[i].slice(0, 2))) paths.push(entries[++i]);
+  }
+  const dirty = paths.filter(kept);
   if (dirty.length) {
     console.error("有未提交的改动或未跟踪的文件，打出来的包会缺它们。先提交，或加 --allow-dirty：");
     for (const f of dirty) console.error("  " + f);
