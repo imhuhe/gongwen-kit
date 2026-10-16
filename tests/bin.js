@@ -50,4 +50,25 @@ r = gw("check", "--strict", "不存在.docx");
 assert.strictEqual(r.status, 2, "读不到文件应返回 2");
 assert.strictEqual((r.stderr.match(/读不进这份文件/g) || []).length, 1, "工具故障后应立即中止，不再跑后两道");
 
-console.log("统一入口测试通过（在仓库之外的目录走完 new、出稿、check、fix 与三个负对照）");
+// --json：通过时 status 为 pass；标题里放一个异形词（筹画），文风规范层必须命中并标 blocking
+r = gw("check", "a.docx", "--json");
+assert.strictEqual(r.status, 0, "--json 通过时应返回 0");
+let rep = JSON.parse(r.stdout);
+assert.strictEqual(rep.status, "pass");
+assert.deepStrictEqual(rep.checks.map((c) => c.check), ["体例", "数字自洽", "文风"]);
+
+assert.strictEqual(gw("new", "--form", "wen", "--out", "b.js", "--title", "关于筹画工作的通知").status, 0);
+run(["b.js"]); // 出稿时机检会命中并以非零退出，docx 照样写出
+assert.ok(fs.existsSync(path.join(cwd, "b.docx")), "没写出 b.docx");
+r = gw("check", "b.docx", "--json");
+assert.strictEqual(r.status, 0, "不带 --strict 时命中不改变退出码");
+rep = JSON.parse(r.stdout);
+assert.strictEqual(rep.status, "hit");
+assert.ok(rep.blocking >= 1, "应有拦稿命中");
+const style = rep.checks.find((c) => c.check === "文风");
+assert.ok(style.hits.some((h) => h.rule === "异形词" && h.blocking), "文风层应报出异形词且标 blocking");
+assert.strictEqual(gw("check", "b.docx", "--json", "--strict").status, 1, "--strict 下命中应返回 1");
+rep = JSON.parse(gw("check", "不存在.docx", "--json").stdout);
+assert.strictEqual(rep.status, "fault", "读不到文件时 JSON 的 status 应为 fault");
+
+console.log("统一入口测试通过（在仓库之外的目录走完 new、出稿、check、fix、check --json 与各负对照）");

@@ -1,6 +1,6 @@
 ---
 name: gongwen-kit
-description: 中文公文（党政机关、央国企场景）Word 生成、修复与合规机检：按 GB/T 9704 生成标准 .docx——通知、报告、请示、函、纪要、管理办法等，含红头、发文字号、版记；出稿自动机检（体例、数字、文风）；现成 .docx 按国标修复，改动写成修订痕迹。Use when creating, fixing, formatting, or machine-checking Chinese official documents (gongwen) as Word files.
+description: 中文公文（党政机关、央国企场景）Word 生成、修复与合规机检：按 GB/T 9704 生成标准 .docx——通知、报告、请示、函、纪要、管理办法等，含红头、发文字号、版记；出稿自动机检（体例、数字、文风）；现成 .docx 按国标修复，改动写成修订痕迹。不适用于合同、简历、普通商务报告等非公文的 Word 文档。Use when creating, fixing, formatting, or machine-checking Chinese official documents (gongwen) as Word files; not for general Word documents.
 ---
 
 # gongwen-kit
@@ -9,6 +9,10 @@ description: 中文公文（党政机关、央国企场景）Word 生成、修�
 
 用户要起草、生成或检查中文公文（通知、请示、报告、函、纪要、管理办法、条例等）
 的 Word（.docx）文件时。
+
+**不用它的情形**：合同、简历、普通商务报告、PPT、Excel 等非公文，用通用的 Office 或 Word skill。
+同时装了通用 Word skill 时，中文公文一律走本 skill：国标版式和数字机检只在这里，
+不要用通用 skill 重做版式，也不要先用通用 skill 出稿再来套格式。
 
 ## 先定位工具包
 
@@ -37,6 +41,11 @@ node "/Users/me/.agents/skills/gongwen-kit/bin/gongwen.js" where   # 打印工�
    输出全绿才算过，非零退出就去改，别改检查。数字机检分两档：「计数与列举」
    （「以下三点」与实际条数）等拦截项必须改；「提示」开头的正文取值对照不拦稿，
    核对后属实就改，不属实（不同主语、不同口径）就留着，不必为消提示改写原文。
+   **同一份稿子最多改三轮。** 三轮后仍有拦稿命中，停下，把机检输出原样交给用户，
+   说明哪几条没过、为什么没能改掉，不要再试。
+   要逐条的结构化结果时用 `check --json`，看 `status`：`pass` 全过；`hit` 有拦稿命中，
+   `blocking` 为 true 的必须改，为 false 的只是提示；`fault` 是工具故障，不是稿子的问题，
+   先修环境，不要改稿子。
 4. **交付**：.docx 给用户；要 PDF 就在 Word 里导出，再按需跑
    `node "$KIT/bin/gongwen.js" pdf 导出件.pdf` 核字体与版面。
 

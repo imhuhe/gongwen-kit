@@ -97,6 +97,28 @@ gongwen-kit 本身全部在本机运行，安装后不联网：排版和机检�
 让 AI 起草正文时，内容去哪由你用的模型决定。用云端模型，起草的内容会发给模型服务商；
 涉密材料要么自己写好只交给它排版检查，要么接内网或本地部署的模型。
 
+### 内网和离线安装
+
+目标机器联不了网时，在能上网的机器上打一个带依赖的包：
+
+```bash
+node tools/pack-offline.js --out ~/Desktop      # 产出 gongwen-kit-v<版本>-offline.tgz，约 2 MB
+```
+
+包里是 git 已跟踪的文件加生产依赖（docx、jszip、sax，都是纯 JavaScript），不含样张图片和测试。
+拷到内网机器解压，机器上只需要 Node 18 以上，不跑 npm、不联网：
+
+```bash
+tar -xzf gongwen-kit-v*-offline.tgz
+node gongwen-kit-v*/bin/gongwen.js where        # 能打印目录就说明可用
+```
+
+之后按下文「当作 agent skill 用」把解压目录链进 skill 目录。已在本机解压后完整走通起稿、出稿、机检；
+Windows 内网机上的解压与运行没有实测。
+
+两处要提前备好：可选的 PDF 检查需要 PyMuPDF，离线机器上要预先下载 wheel；
+标题和机关标志用的方正小标宋要由目标机器自己提供，没装时的替代见 [docs/字体.md](docs/字体.md)。
+
 ## 当作 agent skill 用
 
 目录里的 `SKILL.md` 是入口，格式是 Agent Skills 通用的 `name` 加 `description`。
@@ -120,12 +142,18 @@ Claude Code 换成 `~/.claude/skills/gongwen-kit`。
 
 之后直接说「按公文格式起草一份关于××的通知」即可。
 
+**与通用 Office skill 并存。** DeepSeek Harness 自带一组通用 Office skill（`office`、`office-docx` 等），
+模型按任务从目录里自己选。本 skill 的 `description` 写明了只管中文公文、不管合同简历等一般 Word 文档，
+`SKILL.md` 里也要求中文公文一律走本 skill。两者可以同时装；在 DeepSeek Harness 里模型是否总能选对，
+尚未实测。
+
 **与 agent 的工作目录无关。** agent 的工作目录是你的项目，不是本仓库，所以命令统一走入口脚本，
 任何目录都能调：
 
 ```bash
 node /path/to/gongwen-kit/bin/gongwen.js new --form wen --out 稿子.js   # 起稿源脚本
 node /path/to/gongwen-kit/bin/gongwen.js check 稿子.docx --strict       # 三道机检依次跑完
+node /path/to/gongwen-kit/bin/gongwen.js check 稿子.docx --json         # 同上，stdout 只出一份 JSON，供程序读
 node /path/to/gongwen-kit/bin/gongwen.js fix 稿子.docx                  # 修复现成文件
 ```
 

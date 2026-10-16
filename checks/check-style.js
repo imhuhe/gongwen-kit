@@ -2,7 +2,9 @@
 /**
  * check-style.js —— 文风机检（出稿链第三道），由 writeDoc 自动调用。
  *
- * 用法：node check-style.js <文件.docx|.txt> [--strict]
+ * 用法：node check-style.js <文件.docx|.txt> [--strict] [--json]
+ *       --json 时只在 stdout 输出一个 JSON：{check, file, hits:[{rule, detail, blocking}]}，
+ *       规范层 blocking 为 true，风格层为 false，退出码不变。
  *       .docx 抽正文；.txt/.md 直接读（供测试）。
  *       【规范】命中（异形词、中文里的半角标点）--strict 时退出 1；
  *       【风格】命中（AI 套话、商业黑话、形状）只打印，不影响退出码。
@@ -29,7 +31,7 @@ async function bodyOf(file) {
 (async () => {
   const file = process.argv[2];
   if (!file) {
-    console.error("用法：node check-style.js <文件.docx|.txt> [--strict]");
+    console.error("用法：node check-style.js <文件.docx|.txt> [--strict] [--json]");
     process.exit(2);
   }
   const strict = process.argv.includes("--strict");
@@ -43,6 +45,15 @@ async function bodyOf(file) {
   }
   const body = raw.replace(/「[^」\n]*」/g, "　").replace(/“[^”\n]*”/g, "　");
   const { norm, style } = scan(body);
+  if (process.argv.includes("--json")) {
+    const row = (blocking) => (l) => ({ rule: l.split(/[：（\s]/)[0], detail: l, blocking });
+    console.log(JSON.stringify({
+      check: "文风", file: name,
+      hits: [...norm.map(row(true)), ...style.map(row(false))],
+    }));
+    if (norm.length && strict) process.exit(1);
+    return;
+  }
   if (!norm.length && !style.length) {
     console.log(`文风机检通过　${name}`);
     return;

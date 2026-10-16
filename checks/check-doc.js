@@ -2,7 +2,8 @@
 /**
  * check-doc.js —— 体例与语言机检（公文体）。
  *
- * 用法：node check-doc.js <文件.docx> [--strict]
+ * 用法：node check-doc.js <文件.docx> [--strict] [--json]
+ *       --json 时只在 stdout 输出一个 JSON：{check, file, hits:[{rule, detail, blocking}]}，退出码不变。
  *       稿源脚本由 writeDoc 写盘后自动调用；--strict 时命中即非零退出。
  *
  * 查四类：
@@ -283,7 +284,7 @@ module.exports = { readDocx, check };
 if (require.main === module) (async () => {
   const file = process.argv[2];
   if (!file) {
-    console.error("用法：node check-doc.js <文件.docx> [--strict]");
+    console.error("用法：node check-doc.js <文件.docx> [--strict] [--json]");
     process.exit(2);
   }
   const strict = process.argv.includes("--strict");
@@ -295,6 +296,14 @@ if (require.main === module) (async () => {
     process.exit(2);
   }
   const hits = check(file, doc);
+  if (process.argv.includes("--json")) {
+    console.log(JSON.stringify({
+      check: "体例", file: path.basename(file),
+      hits: hits.map((h) => ({ rule: h.rule, detail: h.detail, blocking: true })),
+    }));
+    if (hits.length && strict) process.exit(1);
+    return;
+  }
   if (!hits.length) {
     console.log(`体例机检通过　${path.basename(file)}`);
   } else {

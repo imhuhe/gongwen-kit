@@ -5,8 +5,9 @@
  * 用法：
  *   gongwen new  --form wen|zhang --out 稿子.js [--title "标题"]   起稿源脚本
  *   gongwen fix  稿子.docx [--out 输出.docx] [--no-layout]         修复现成 docx
- *   gongwen check 稿子.docx [--strict]                             依次跑体例、数字、文风三道机检
+ *   gongwen check 稿子.docx [--strict] [--json]                    依次跑体例、数字、文风三道机检
  *                                                                  退出码：0 全过，1 命中，2 工具故障
+ *                                                                  --json：stdout 只出一份汇总 JSON，见 lib/gongwen-core.js 的 runChecks
  *   gongwen pdf  导出件.pdf                                        核字体与版面（需要 pymupdf）
  *   gongwen where                                                  打印本工具包所在目录
  *
@@ -45,7 +46,9 @@ switch (cmd) {
     // 文件名和选项分开：选项写在文件名前面也行
     const file = rest.find((a) => !a.startsWith("--"));
     if (!file) usage();
-    const r = require("../lib/gongwen-core").runChecks(file, rest.includes("--strict"));
+    const json = rest.includes("--json");
+    const r = require("../lib/gongwen-core").runChecks(file, rest.includes("--strict"), { json });
+    if (json) console.log(JSON.stringify(r.report, null, 2));
     process.exit(r.fault ? 2 : r.ok ? 0 : 1);
   }
   case "pdf":

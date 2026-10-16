@@ -389,7 +389,7 @@ module.exports = { check };
 if (require.main === module) (async () => {
   const file = process.argv[2];
   if (!file) {
-    console.error("用法：node check-num.js <文件.docx> [--strict]");
+    console.error("用法：node check-num.js <文件.docx> [--strict] [--json]");
     process.exit(2);
   }
   const strict = process.argv.includes("--strict");
@@ -401,6 +401,15 @@ if (require.main === module) (async () => {
     process.exit(2);
   }
   const hints = hits.hints || [];
+  if (process.argv.includes("--json")) {
+    const row = (blocking) => (h) => ({ rule: h.rule, detail: h.detail, blocking, anchors: h.anchors || [] });
+    console.log(JSON.stringify({
+      check: "数字自洽", file: path.basename(file),
+      hits: [...hits.map(row(true)), ...hints.map(row(false))],
+    }));
+    if (hits.length && strict) process.exit(1);
+    return;
+  }
   const showHints = () => {
     if (!hints.length) return;
     console.log(`  提示 ${hints.length} 处（不拦稿，请人工核对）：`);
