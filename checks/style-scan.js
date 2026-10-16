@@ -40,11 +40,15 @@ const LATIN_ABBR = /\be\.g\.|\bi\.e\.|\betc\.|[（(]?et al\./gi;
 const MODAL_STACK = /(?:可能|也许|或许|大概|似乎|恐怕|应该|应当)[、]?(?:可能|也许|或许|大概|似乎|恐怕|应该|应当)/g;
 const NOMINALIZE = /(?:进行|予以|加以)(?:了|一个|一场|一次|一番)?[^，。；：！？、,.:;!?()（）「」\n]{0,8}?(?:调整|修改|优化|处理|检查|确认|评估|分析|核实|更新|变更|操作|梳理|排查|整理|验证|说明|补充|升级|改造|讨论|盘点|清理|迁移|部署|发布|采集|统计|核算)/g;
 
-/** 扫一段已抠引文的正文，返回 { norm, style } 两组提示行。 */
+/** 扫一段已抠引文的正文，返回 { norm, style, anchors, normHits, styleHits }：
+ *  normHits、styleHits 是 {rule, text} 数组，规则名与提示行出自同一次 push，不会错位；
+ *  norm、style 是其中的 text（两组提示行，旧调用方用）。 */
 function scan(body) {
-  const norm = [];
+  const normHits = [];
+  const styleHits = [];
+  const normHit = (rule, text) => normHits.push({ rule, text });
+  const styleHit = (rule, text) => styleHits.push({ rule, text });
   const anchors = [];   // 规范层命中的原文片段（修复工具挂批注用）
-  const style = [];
 
   // ── 规范层 ─────────────────────────────────────────────
   const yx = [];
@@ -54,7 +58,7 @@ function scan(body) {
       if (w && body.includes(w)) { yx.push(`${w} → ${row[0]}`); anchors.push(w); }
     }
   }
-  if (yx.length) norm.push(`异形词 ${yx.length} 处（GF 1001-2001）：${yx.join("、")}`);
+  if (yx.length) { normHit("异形词", `异形词 ${yx.length} 处（GF 1001-2001）：${yx.join("、")}`); }
 
   // 半角标点：只算紧贴中文的那些。例外一档——阿拉伯数字序号的半角下脚点
   // （「附件：1.××××」的「1.」）是 GB/T 15834 附录 B 的正当写法，
@@ -69,7 +73,7 @@ function scan(body) {
   }
   if (half.length) {
     const seen = [...new Set(half.map((h) => h.trim()))];
-    norm.push(`中文里的半角标点 ${half.length} 处（${seen.slice(0, 6).join("、")}）。一律改全角（GB/T 15834）。`);
+    normHit("中文里的半角标点", `中文里的半角标点 ${half.length} 处（${seen.slice(0, 6).join("、")}）。一律改全角（GB/T 15834）。`);
   }
 
   // ── 风格层：词表 ───────────────────────────────────────
@@ -79,30 +83,30 @@ function scan(body) {
     if (body.includes(bad)) (byGroup[group] = byGroup[group] || []).push(`${bad} → ${good}`);
   }
   for (const [g, items] of Object.entries(byGroup)) {
-    style.push(`${GROUP_NAME[g] || g}：${items.join("；")}`);
+    styleHit(GROUP_NAME[g] || g, `${GROUP_NAME[g] || g}：${items.join("；")}`);
   }
 
   // ── 风格层：形状 ───────────────────────────────────────
   // 否定平行句：句型本身正当（定义＋区分），病在滥用——同一篇 ≥3 次才报。
   const neg = body.match(/不是[^。！？\n]{0,30}而是|并非[^。！？\n]{0,30}而是/g) || [];
   if (neg.length >= 3) {
-    style.push(`否定平行句 ${neg.length} 处（不是…而是／并非…而是）。句型正当，短段里连着用是审美疲劳，留真正需要区分的那处。`);
+    styleHit("否定平行句", `否定平行句 ${neg.length} 处（不是…而是／并非…而是）。句型正当，短段里连着用是审美疲劳，留真正需要区分的那处。`);
   }
 
   // AI 工具指纹：从别处粘来时留下的标记，出现即删。
   const fp = body.match(/turn\d+search\d+|oai_citation|oaicite|contentReference|utm_source=(?:chatgpt|copilot)\.com/g) || [];
-  if (fp.length) style.push(`AI 工具指纹 ${fp.length} 处：${[...new Set(fp)].slice(0, 4).join("、")}。整段删掉。`);
+  if (fp.length) { styleHit("AI 工具指纹", `AI 工具指纹 ${fp.length} 处：${[...new Set(fp)].slice(0, 4).join("、")}。整段删掉。`); }
 
   const latin = body.match(LATIN_ABBR) || [];
   if (latin.length) {
-    style.push(`拉丁缩写 ${latin.length} 处（${[...new Set(latin.map((x) => x.toLowerCase()))].join("、")}）：中文文本写「例如／即／等等」。`);
+    styleHit("拉丁缩写", `拉丁缩写 ${latin.length} 处（${[...new Set(latin.map((x) => x.toLowerCase()))].join("、")}）：中文文本写「例如／即／等等」。`);
   }
   const modal = body.match(MODAL_STACK) || [];
-  if (modal.length) style.push(`情态词堆叠 ${modal.length} 处（${[...new Set(modal)].join("、")}）：留一个。`);
+  if (modal.length) { styleHit("情态词堆叠", `情态词堆叠 ${modal.length} 处（${[...new Set(modal)].join("、")}）：留一个。`); }
   const nm = body.match(NOMINALIZE) || [];
-  if (nm.length) style.push(`虚动词结构 ${nm.length} 处（${nm.slice(0, 4).join("、")}）：动作直接用动词。`);
+  if (nm.length) { styleHit("虚动词结构", `虚动词结构 ${nm.length} 处（${nm.slice(0, 4).join("、")}）：动作直接用动词。`); }
 
-  return { norm, style, anchors };
+  return { norm: normHits.map((h) => h.text), style: styleHits.map((h) => h.text), anchors, normHits, styleHits };
 }
 
 module.exports = { scan, loadTsv };

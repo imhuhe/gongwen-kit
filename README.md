@@ -4,7 +4,7 @@
   <a href="https://github.com/imhuhe/gongwen-kit/actions/workflows/ci.yml"><img src="https://github.com/imhuhe/gongwen-kit/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/imhuhe/gongwen-kit/releases"><img src="https://img.shields.io/github/v/tag/imhuhe/gongwen-kit?label=version&color=A8791F" alt="version"></a>
   <img src="https://img.shields.io/badge/GB%2FT-9704--2012-D7261E" alt="GB/T 9704-2012">
-  <img src="https://img.shields.io/badge/agent%20skill-Claude%20Code%20%7C%20OpenCode-0C0C0C" alt="agent skill">
+  <img src="https://img.shields.io/badge/agent%20skill-Claude%20Code%20%7C%20Codex%20%7C%20DeepSeek%20Harness-0C0C0C" alt="agent skill">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-6B7075" alt="MIT"></a>
 </p>
 
@@ -97,15 +97,75 @@ gongwen-kit 本身全部在本机运行，安装后不联网：排版和机检�
 让 AI 起草正文时，内容去哪由你用的模型决定。用云端模型，起草的内容会发给模型服务商；
 涉密材料要么自己写好只交给它排版检查，要么接内网或本地部署的模型。
 
-## 当作 agent skill 用
+### 内网和离线安装
 
-Claude Code 与 OpenCode 读同一个目录约定：
+目标机器联不了网时，在能上网的机器上打一个带依赖的包：
 
 ```bash
-ln -s "$(pwd)" ~/.claude/skills/gongwen-kit
+node tools/pack-offline.js --out ~/Desktop      # 产出 gongwen-kit-v<版本>-offline.tgz，约 2 MB
 ```
 
-之后直接说「按公文格式起草一份关于××的通知」即可。Codex 换成 `~/.codex/skills`（未实测）。
+包里是 git 已跟踪的文件加生产依赖（docx、jszip、sax，都是纯 JavaScript），不含宣传图、PDF 样张、测试和 `AGENTS.md`，
+另附一份《离线包说明.md》写明缺什么，所以包里 README 指向图片和样张的链接打不开，`npm test` 也不可用。
+有未提交的改动或未跟踪的新文件时，打包会拒绝并点名这些文件，免得新文件被静默漏掉。
+拷到内网机器解压，机器上只需要 Node 18 以上，不跑 npm、不联网：
+
+```bash
+tar -xzf gongwen-kit-v*-offline.tgz
+node gongwen-kit-v*/bin/gongwen.js where        # 能打印目录就说明可用
+```
+
+之后按下文「当作 agent skill 用」把解压目录链进 skill 目录。已在本机解压后完整走通起稿、出稿、机检；打包脚本的文件选择与拒绝逻辑由 `npm test` 覆盖（不联网），
+`npm ci` 那一步没有测试。Windows 内网机上的解压与运行没有实测。
+
+两处要提前备好：可选的 PDF 检查需要 PyMuPDF，离线机器上要预先下载 wheel；
+标题和机关标志用的方正小标宋要由目标机器自己提供，没装时的替代见 [docs/字体.md](docs/字体.md)。
+
+## 当作 agent skill 用
+
+目录里的 `SKILL.md` 是入口，格式是 Agent Skills 通用的 `name` 加 `description`。
+各家读取的目录不同，装法如下：
+
+| 工具 | 用户级目录 | 项目级目录 | 依据 |
+|---|---|---|---|
+| Claude Code | `~/.claude/skills/` | `.claude/skills/` | code.claude.com/docs/en/skills |
+| Codex | `~/.agents/skills/` | `.agents/skills/` | developers.openai.com/codex/skills |
+| DeepSeek Harness（`dsh`） | `~/.agents/skills/` 或 `~/.dsh/skills/` | `.agents/skills/` 或 `.dsh/skills/` | 其仓库 `packages/skill/skill-filesystem` 的说明 |
+| OpenCode | `~/.agents/skills/`、`~/.claude/skills/` 或 `~/.config/opencode/skills/` | `.agents/skills/`、`.claude/skills/` 或 `.opencode/skills/` | opencode.ai/docs/skills |
+
+Codex、DeepSeek Harness 和 OpenCode 都读 `~/.agents/skills/`，装一处三边都能读到：
+
+```bash
+mkdir -p ~/.agents/skills
+ln -s "$(pwd)" ~/.agents/skills/gongwen-kit
+```
+
+Claude Code 换成 `~/.claude/skills/gongwen-kit`。
+
+之后直接说「按公文格式起草一份关于××的通知」即可。
+
+**与通用 Office skill 并存。** DeepSeek Harness 自带一组通用 Office skill（`office`、`office-docx` 等），
+模型按任务从目录里自己选。本 skill 的 `description` 写明了只管中文公文、不管合同简历等一般 Word 文档，
+`SKILL.md` 里也要求中文公文一律走本 skill。两者可以同时装；在 DeepSeek Harness 里模型是否总能选对，
+尚未实测。
+
+**与 agent 的工作目录无关。** agent 的工作目录是你的项目，不是本仓库，所以命令统一走入口脚本，
+任何目录都能调：
+
+```bash
+node /path/to/gongwen-kit/bin/gongwen.js new --form wen --out 稿子.js   # 起稿源脚本
+node /path/to/gongwen-kit/bin/gongwen.js check 稿子.docx --strict       # 三道机检依次跑完
+node /path/to/gongwen-kit/bin/gongwen.js check 稿子.docx --json         # 同上，stdout 只出一份 JSON（出错也是），退出码 0 通过、1 命中、2 工具故障
+node /path/to/gongwen-kit/bin/gongwen.js fix 稿子.docx                  # 修复现成文件
+```
+
+`SKILL.md` 里把这个目录记作 `$KIT`，它只是记号，不是环境变量：agent 要换成加载 skill 时看到的 `SKILL.md` 所在目录的绝对路径。
+`npm link` 之后可以直接敲 `gongwen`。
+
+**验证状态。** 目录约定取自上表四家的官方文档与源码说明（2026-10-17 核对）；入口脚本在仓库之外的目录里走完起稿、
+出稿、机检、修复，`npm test` 覆盖这一点，`SKILL.md` 的 frontmatter 也按 DeepSeek Harness
+与 Codex 的规则在测试里近似校验（自写的简易解析，不是它们的真实加载器）。Codex 与 DeepSeek Harness 上的真实加载与端到端起草**尚未实测**。
+DeepSeek Harness 仍是 developer preview，目录约定可能变。
 
 ## 写自己的公文
 
