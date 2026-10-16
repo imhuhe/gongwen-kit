@@ -13,14 +13,17 @@ description: 中文公文（党政机关、央国企场景）Word 生成、修�
 ## 先定位工具包
 
 本文件所在的目录就是工具包目录，下文记作 `$KIT`。你的工作目录通常是用户的项目，不是 `$KIT`，
-所以命令里不要写相对路径。统一用入口脚本，它从任何目录都能调：
+所以命令里不要写相对路径。统一用入口脚本，它从任何目录都能调。
+
+**`$KIT` 只是本文的记号，不是环境变量。** 执行命令前先把它换成 `SKILL.md` 所在目录的绝对路径
+（取你加载这个 skill 时看到的路径），每条命令都写完整，不要依赖上一条命令里设过的变量。例如
+`SKILL.md` 在 `/Users/me/.agents/skills/gongwen-kit/` 时：
 
 ```bash
-node "$KIT/bin/gongwen.js" where     # 打印工具包目录，用来确认路径对不对
+node "/Users/me/.agents/skills/gongwen-kit/bin/gongwen.js" where   # 打印工具包目录，用来确认路径对不对
 ```
 
-`$KIT` 取你加载这个 skill 时看到的 `SKILL.md` 所在目录。找不到就问用户，不要猜。
-下文 `templates/`、`docs/` 的相对路径都指 `$KIT` 下面。
+找不到这个目录就问用户，不要猜。下文 `templates/`、`docs/` 的相对路径都指 `$KIT` 下面。
 
 ## 工作流
 

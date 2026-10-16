@@ -2,6 +2,3 @@ interface:
   display_name: "公文生成与机检"
   short_description: "按 GB/T 9704 生成、修复 Word 公文，出稿自动机检"
   default_prompt: "按公文格式起草一份关于××的通知"
-
-policy:
-  allow_implicit_invocation: true

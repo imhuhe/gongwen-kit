@@ -8,7 +8,9 @@
  *   Codex：name、description 必填；agents/openai.yaml 可选。
  *   Agent Skills 规范：name 小写字母数字加连字符，最长 64；description 最长 1024。
  *
- * 不引入 YAML 库：frontmatter 只用顶层标量，逐行解析够用；遇到缩进或列表就报错提醒。
+ * 不引入 YAML 库，只解析顶层标量：去掉成对的引号，认 `>`、`|` 开头的多行块标量；
+ * 遇到别的缩进或列表就报错提醒。这是对常见写法的近似，结论不等于 DSH 或 Codex
+ * 的真实加载结果。
  */
 "use strict";
 const fs = require("fs");
@@ -24,7 +26,9 @@ if (!m) {
   fail("SKILL.md 没有以 --- 包起来的 frontmatter");
 } else {
   const fm = {};
-  for (const line of m[1].split("\n")) {
+  const lines = m[1].split("\n");
+  for (let n = 0; n < lines.length; n++) {
+    const line = lines[n];
     if (!line.trim()) continue;
     if (/^\s/.test(line) || line.startsWith("- ")) {
       fail(`frontmatter 出现缩进或列表行，本校验器不解析：${line}`);
@@ -32,7 +36,17 @@ if (!m) {
     }
     const i = line.indexOf(":");
     if (i < 0) { fail(`frontmatter 行缺少冒号：${line}`); continue; }
-    fm[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+    let v = line.slice(i + 1).trim();
+    if (/^[>|][+-]?$/.test(v)) {
+      // 块标量：收集后面缩进的行，折叠（>）用空格连接，保留（|）用换行
+      const body = [];
+      while (n + 1 < lines.length && (/^\s/.test(lines[n + 1]) || !lines[n + 1].trim())) body.push(lines[++n].trim());
+      v = body.join(v[0] === ">" ? " " : "\n").trim();
+    } else {
+      const q = v.match(/^(["'])([\s\S]*)\1$/);
+      if (q) v = q[2];
+    }
+    fm[line.slice(0, i).trim()] = v;
   }
   if (!fm.name) fail("缺少 name");
   else {

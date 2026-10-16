@@ -6,11 +6,12 @@
  *   gongwen new  --form wen|zhang --out 稿子.js [--title "标题"]   起稿源脚本
  *   gongwen fix  稿子.docx [--out 输出.docx] [--no-layout]         修复现成 docx
  *   gongwen check 稿子.docx [--strict]                             依次跑体例、数字、文风三道机检
+ *                                                                  退出码：0 全过，1 命中，2 工具故障
  *   gongwen pdf  导出件.pdf                                        核字体与版面（需要 pymupdf）
  *   gongwen where                                                  打印本工具包所在目录
  *
- * 只做分派：每个子命令转给 tools/ 或 checks/ 里的原脚本，参数、输出、退出码原样透传，
- * 所以直接调原脚本和走本入口结果相同。
+ * 只做分派：new、fix、pdf 转给 tools/ 里的原脚本，参数、输出、退出码原样透传；
+ * check 直接调核心库的 runChecks，与出稿时自动跑的机检链是同一份实现。
  */
 "use strict";
 const path = require("path");
@@ -19,8 +20,16 @@ const { spawnSync } = require("child_process");
 const KIT = path.resolve(__dirname, "..");
 const [cmd, ...rest] = process.argv.slice(2);
 
-const run = (bin, script, args) =>
-  spawnSync(bin, [path.join(KIT, script), ...args], { stdio: "inherit" }).status ?? 1;
+// 没能启动或被信号杀死时打印原因并返回 2，与核心库的约定一致：2 是工具故障，1 是稿子命中
+const run = (bin, script, args) => {
+  const r = spawnSync(bin, [path.join(KIT, script), ...args], { stdio: "inherit" });
+  if (r.error || r.status === null) {
+    console.error(`没能跑起来 ${bin} ${script}（工具故障，不是稿子的问题）：`,
+      r.error ? r.error.message : `被信号 ${r.signal} 终止`);
+    return 2;
+  }
+  return r.status;
+};
 
 const usage = () => {
   console.error("用法：gongwen new|fix|check|pdf|where …（详见本文件头部注释）");
@@ -33,13 +42,11 @@ switch (cmd) {
   case "fix":
     process.exit(run(process.execPath, "tools/fix-doc.js", rest));
   case "check": {
-    if (!rest.length) usage();
-    // 三道都跑完再退出，让用户一次看到全部问题；任何一道非零就返回非零
-    let worst = 0;
-    for (const c of ["check-doc", "check-num", "check-style"]) {
-      worst = Math.max(worst, run(process.execPath, `checks/${c}.js`, rest));
-    }
-    process.exit(worst);
+    // 文件名和选项分开：选项写在文件名前面也行
+    const file = rest.find((a) => !a.startsWith("--"));
+    if (!file) usage();
+    const r = require("../lib/gongwen-core").runChecks(file, rest.includes("--strict"));
+    process.exit(r.fault ? 2 : r.ok ? 0 : 1);
   }
   case "pdf":
     process.exit(run(process.platform === "win32" ? "python" : "python3", "tools/check-pdf.py", rest));

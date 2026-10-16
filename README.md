@@ -104,19 +104,19 @@ gongwen-kit 本身全部在本机运行，安装后不联网：排版和机检�
 
 | 工具 | 用户级目录 | 项目级目录 | 依据 |
 |---|---|---|---|
-| Claude Code | `~/.claude/skills/` | `.claude/skills/` | Claude Code 文档 |
+| Claude Code | `~/.claude/skills/` | `.claude/skills/` | code.claude.com/docs/en/skills |
 | Codex | `~/.agents/skills/` | `.agents/skills/` | developers.openai.com/codex/skills |
 | DeepSeek Harness（`dsh`） | `~/.agents/skills/` 或 `~/.dsh/skills/` | `.agents/skills/` 或 `.dsh/skills/` | 其仓库 `packages/skill/skill-filesystem` 的说明 |
-| OpenCode | `~/.claude/skills/` | `.claude/skills/` | 读 Claude 的目录约定 |
+| OpenCode | `~/.agents/skills/`、`~/.claude/skills/` 或 `~/.config/opencode/skills/` | `.agents/skills/`、`.claude/skills/` 或 `.opencode/skills/` | opencode.ai/docs/skills |
 
-Codex 和 DeepSeek Harness 共用 `~/.agents/skills/`，装一处两边都能读到：
+Codex、DeepSeek Harness 和 OpenCode 都读 `~/.agents/skills/`，装一处三边都能读到：
 
 ```bash
 mkdir -p ~/.agents/skills
 ln -s "$(pwd)" ~/.agents/skills/gongwen-kit
 ```
 
-Claude Code 与 OpenCode 换成 `~/.claude/skills/gongwen-kit`。
+Claude Code 换成 `~/.claude/skills/gongwen-kit`。
 
 之后直接说「按公文格式起草一份关于××的通知」即可。
 
@@ -129,12 +129,12 @@ node /path/to/gongwen-kit/bin/gongwen.js check 稿子.docx --strict       # 三�
 node /path/to/gongwen-kit/bin/gongwen.js fix 稿子.docx                  # 修复现成文件
 ```
 
-`SKILL.md` 里把这个目录记作 `$KIT`，agent 取加载 skill 时看到的 `SKILL.md` 所在目录。
+`SKILL.md` 里把这个目录记作 `$KIT`，它只是记号，不是环境变量：agent 要换成加载 skill 时看到的 `SKILL.md` 所在目录的绝对路径。
 `npm link` 之后可以直接敲 `gongwen`。
 
-**验证状态。** 目录约定取自上表三家的官方文档与源码说明；入口脚本在仓库之外的目录里走完起稿、
+**验证状态。** 目录约定取自上表四家的官方文档与源码说明（2026-10-17 核对）；入口脚本在仓库之外的目录里走完起稿、
 出稿、机检、修复，`npm test` 覆盖这一点，`SKILL.md` 的 frontmatter 也按 DeepSeek Harness
-与 Codex 的规则在测试里校验。Codex 与 DeepSeek Harness 上的真实加载与端到端起草**尚未实测**。
+与 Codex 的规则在测试里近似校验（自写的简易解析，不是它们的真实加载器）。Codex 与 DeepSeek Harness 上的真实加载与端到端起草**尚未实测**。
 DeepSeek Harness 仍是 developer preview，目录约定可能变。
 
 ## 写自己的公文

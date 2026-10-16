@@ -14,6 +14,8 @@ const { spawnSync } = require("child_process");
 
 const BIN = path.resolve(__dirname, "..", "bin", "gongwen.js");
 const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "gongwen-bin-"));
+// 断言失败也要清掉自己建的目录
+process.on("exit", () => fs.rmSync(cwd, { recursive: true, force: true }));
 const run = (args) => spawnSync(process.execPath, args, { cwd, encoding: "utf8" });
 const gw = (...args) => run([BIN, ...args]);
 
@@ -41,5 +43,11 @@ assert.ok(fs.existsSync(path.join(cwd, "a-修订.docx")), "没写出 a-修订.do
 assert.notStrictEqual(gw("check", "不存在.docx").status, 0, "读不到文件时 check 不应返回 0");
 assert.strictEqual(gw("bogus").status, 2, "未知子命令应返回 2");
 assert.strictEqual(gw("check").status, 2, "check 缺参数应返回 2");
+
+// 选项写在文件名前面也要认；读不到文件是工具故障（2），且只报一次，不再接着跑后两道
+assert.strictEqual(gw("check", "--strict", "a.docx").status, 0, "选项在前时 check 应通过");
+r = gw("check", "--strict", "不存在.docx");
+assert.strictEqual(r.status, 2, "读不到文件应返回 2");
+assert.strictEqual((r.stderr.match(/读不进这份文件/g) || []).length, 1, "工具故障后应立即中止，不再跑后两道");
 
 console.log("统一入口测试通过（在仓库之外的目录走完 new、出稿、check、fix 与三个负对照）");
