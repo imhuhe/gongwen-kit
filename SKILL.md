@@ -8,11 +8,23 @@ description: 中文公文（党政机关、央国企场景）Word 生成、修�
 ## 什么时候用它
 
 用户要起草、生成或检查中文公文（通知、请示、报告、函、纪要、管理办法、条例等）
-的 Word（.docx）文件时。仓库路径就是这个 skill 的目录。
+的 Word（.docx）文件时。
+
+## 先定位工具包
+
+本文件所在的目录就是工具包目录，下文记作 `$KIT`。你的工作目录通常是用户的项目，不是 `$KIT`，
+所以命令里不要写相对路径。统一用入口脚本，它从任何目录都能调：
+
+```bash
+node "$KIT/bin/gongwen.js" where     # 打印工具包目录，用来确认路径对不对
+```
+
+`$KIT` 取你加载这个 skill 时看到的 `SKILL.md` 所在目录。找不到就问用户，不要猜。
+下文 `templates/`、`docs/` 的相对路径都指 `$KIT` 下面。
 
 ## 工作流
 
-1. **起稿源脚本**：`node tools/new-doc.js --form wen --out 稿子.js`
+1. **起稿源脚本**：`node "$KIT/bin/gongwen.js" new --form wen --out 稿子.js`
    （行文体 `wen`；条文体/办法条例 `zhang`）；或照 `templates/` 里最近的一份改。
 2. **写正文**：只调构件——`letterhead`、`title`、`zhusong`、`p`、`h1`～`h4`、
    `table`、`luokuan`、`fujian`、`fuzhu`、`fujianPage`、`banji`。不手拼 docx 元素、不写 `new Paragraph`。
@@ -23,10 +35,12 @@ description: 中文公文（党政机关、央国企场景）Word 生成、修�
    （「以下三点」与实际条数）等拦截项必须改；「提示」开头的正文取值对照不拦稿，
    核对后属实就改，不属实（不同主语、不同口径）就留着，不必为消提示改写原文。
 4. **交付**：.docx 给用户；要 PDF 就在 Word 里导出，再按需跑
-   `tools/check-pdf.py` 核字体与版面。
+   `node "$KIT/bin/gongwen.js" pdf 导出件.pdf` 核字体与版面。
+
+只想体检、不改文件时：`node "$KIT/bin/gongwen.js" check 稿子.docx --strict`，体例、数字、文风三道依次跑完。
 
 用户给的是**现成的 .docx**（手写稿、旧模板、别人发来的）要改格式时，不重写，走修复：
-`node tools/fix-doc.js 稿子.docx`，输出「稿子-修订.docx」，原文件不动。版式直接改；
+`node "$KIT/bin/gongwen.js" fix 稿子.docx`，输出「稿子-修订.docx」，原文件不动。版式直接改；
 体例写成修订痕迹由用户逐条接受或拒绝；数字问题只插批注，不替用户改数。
 把终端里的修复报告转述给用户，提醒在 Word「审阅」里过一遍修订和批注。细则见 `docs/修复.md`。
 

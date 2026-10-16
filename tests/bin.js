@@ -1,0 +1,45 @@
+#!/usr/bin/env node
+/**
+ * bin.js —— 断言统一入口 bin/gongwen.js 在仓库之外的目录也能用，退出码如实透传。
+ *
+ * agent 的工作目录是用户的项目，不是本仓库，所以入口不能依赖当前目录：
+ * 这里在系统临时目录里走完 new → 出稿 → check → fix，再各造一个必错的调用。
+ */
+"use strict";
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const assert = require("assert");
+const { spawnSync } = require("child_process");
+
+const BIN = path.resolve(__dirname, "..", "bin", "gongwen.js");
+const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "gongwen-bin-"));
+const run = (args) => spawnSync(process.execPath, args, { cwd, encoding: "utf8" });
+const gw = (...args) => run([BIN, ...args]);
+
+let r = gw("where");
+assert.strictEqual(r.status, 0);
+assert.strictEqual(fs.realpathSync(r.stdout.trim()), fs.realpathSync(path.dirname(path.dirname(BIN))), "where 应打印工具包目录");
+
+r = gw("new", "--form", "wen", "--out", "a.js");
+assert.strictEqual(r.status, 0, "new 失败：" + r.stderr);
+r = run(["a.js"]);
+assert.strictEqual(r.status, 0, "稿源脚本出稿失败：" + r.stdout + r.stderr);
+assert.ok(fs.existsSync(path.join(cwd, "a.docx")), "没写出 a.docx");
+
+r = gw("check", "a.docx", "--strict");
+assert.strictEqual(r.status, 0, "check 应通过：" + r.stdout + r.stderr);
+for (const w of ["体例机检通过", "数字自洽通过", "文风机检通过"]) {
+  assert.ok(r.stdout.includes(w), `check 输出里没有「${w}」`);
+}
+
+r = gw("fix", "a.docx");
+assert.strictEqual(r.status, 0, "fix 失败：" + r.stderr);
+assert.ok(fs.existsSync(path.join(cwd, "a-修订.docx")), "没写出 a-修订.docx");
+
+// 负对照：读不到的文件、未知子命令、缺参数，退出码都必须非零
+assert.notStrictEqual(gw("check", "不存在.docx").status, 0, "读不到文件时 check 不应返回 0");
+assert.strictEqual(gw("bogus").status, 2, "未知子命令应返回 2");
+assert.strictEqual(gw("check").status, 2, "check 缺参数应返回 2");
+
+console.log("统一入口测试通过（在仓库之外的目录走完 new、出稿、check、fix 与三个负对照）");

@@ -4,7 +4,7 @@
   <a href="https://github.com/imhuhe/gongwen-kit/actions/workflows/ci.yml"><img src="https://github.com/imhuhe/gongwen-kit/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/imhuhe/gongwen-kit/releases"><img src="https://img.shields.io/github/v/tag/imhuhe/gongwen-kit?label=version&color=A8791F" alt="version"></a>
   <img src="https://img.shields.io/badge/GB%2FT-9704--2012-D7261E" alt="GB/T 9704-2012">
-  <img src="https://img.shields.io/badge/agent%20skill-Claude%20Code%20%7C%20OpenCode-0C0C0C" alt="agent skill">
+  <img src="https://img.shields.io/badge/agent%20skill-Claude%20Code%20%7C%20Codex%20%7C%20DeepSeek%20Harness-0C0C0C" alt="agent skill">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-6B7075" alt="MIT"></a>
 </p>
 
@@ -99,13 +99,43 @@ gongwen-kit 本身全部在本机运行，安装后不联网：排版和机检�
 
 ## 当作 agent skill 用
 
-Claude Code 与 OpenCode 读同一个目录约定：
+目录里的 `SKILL.md` 是入口，格式是 Agent Skills 通用的 `name` 加 `description`。
+各家读取的目录不同，装法如下：
+
+| 工具 | 用户级目录 | 项目级目录 | 依据 |
+|---|---|---|---|
+| Claude Code | `~/.claude/skills/` | `.claude/skills/` | Claude Code 文档 |
+| Codex | `~/.agents/skills/` | `.agents/skills/` | developers.openai.com/codex/skills |
+| DeepSeek Harness（`dsh`） | `~/.agents/skills/` 或 `~/.dsh/skills/` | `.agents/skills/` 或 `.dsh/skills/` | 其仓库 `packages/skill/skill-filesystem` 的说明 |
+| OpenCode | `~/.claude/skills/` | `.claude/skills/` | 读 Claude 的目录约定 |
+
+Codex 和 DeepSeek Harness 共用 `~/.agents/skills/`，装一处两边都能读到：
 
 ```bash
-ln -s "$(pwd)" ~/.claude/skills/gongwen-kit
+mkdir -p ~/.agents/skills
+ln -s "$(pwd)" ~/.agents/skills/gongwen-kit
 ```
 
-之后直接说「按公文格式起草一份关于××的通知」即可。Codex 换成 `~/.codex/skills`（未实测）。
+Claude Code 与 OpenCode 换成 `~/.claude/skills/gongwen-kit`。
+
+之后直接说「按公文格式起草一份关于××的通知」即可。
+
+**与 agent 的工作目录无关。** agent 的工作目录是你的项目，不是本仓库，所以命令统一走入口脚本，
+任何目录都能调：
+
+```bash
+node /path/to/gongwen-kit/bin/gongwen.js new --form wen --out 稿子.js   # 起稿源脚本
+node /path/to/gongwen-kit/bin/gongwen.js check 稿子.docx --strict       # 三道机检依次跑完
+node /path/to/gongwen-kit/bin/gongwen.js fix 稿子.docx                  # 修复现成文件
+```
+
+`SKILL.md` 里把这个目录记作 `$KIT`，agent 取加载 skill 时看到的 `SKILL.md` 所在目录。
+`npm link` 之后可以直接敲 `gongwen`。
+
+**验证状态。** 目录约定取自上表三家的官方文档与源码说明；入口脚本在仓库之外的目录里走完起稿、
+出稿、机检、修复，`npm test` 覆盖这一点，`SKILL.md` 的 frontmatter 也按 DeepSeek Harness
+与 Codex 的规则在测试里校验。Codex 与 DeepSeek Harness 上的真实加载与端到端起草**尚未实测**。
+DeepSeek Harness 仍是 developer preview，目录约定可能变。
 
 ## 写自己的公文
 

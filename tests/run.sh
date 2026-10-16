@@ -19,4 +19,8 @@ echo
 echo "== 修复工具 =="
 node tests/fix.js
 echo
+echo "== skill 入口 =="
+node tests/skill-frontmatter.js
+node tests/bin.js
+echo
 echo "全部通过"
