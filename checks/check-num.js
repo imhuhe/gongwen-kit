@@ -407,7 +407,8 @@ if (require.main === module) (async () => {
       check: "数字自洽", file: path.basename(file),
       hits: [...hits.map(row(true)), ...hints.map(row(false))],
     }));
-    if (hits.length && strict) process.exit(1);
+    // 不调 process.exit：stdout 是管道时，输出较大会在刷完之前被截断
+    if (hits.length && strict) process.exitCode = 1;
     return;
   }
   const showHints = () => {

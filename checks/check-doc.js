@@ -301,7 +301,8 @@ if (require.main === module) (async () => {
       check: "体例", file: path.basename(file),
       hits: hits.map((h) => ({ rule: h.rule, detail: h.detail, blocking: true })),
     }));
-    if (hits.length && strict) process.exit(1);
+    // 不调 process.exit：stdout 是管道时，输出较大会在刷完之前被截断
+    if (hits.length && strict) process.exitCode = 1;
     return;
   }
   if (!hits.length) {

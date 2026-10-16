@@ -22,5 +22,6 @@ echo
 echo "== skill 入口 =="
 node tests/skill-frontmatter.js
 node tests/bin.js
+node tests/pack.js
 echo
 echo "全部通过"

@@ -7,7 +7,8 @@
  *   gongwen fix  稿子.docx [--out 输出.docx] [--no-layout]         修复现成 docx
  *   gongwen check 稿子.docx [--strict] [--json]                    依次跑体例、数字、文风三道机检
  *                                                                  退出码：0 全过，1 命中，2 工具故障
- *                                                                  --json：stdout 只出一份汇总 JSON，见 lib/gongwen-core.js 的 runChecks
+ *                                                                  --json：stdout 只出一份汇总 JSON（出错也是），退出码由 status 决定：
+ *                                                                  pass 0、hit 1、fault 2，与 --strict 无关
  *   gongwen pdf  导出件.pdf                                        核字体与版面（需要 pymupdf）
  *   gongwen where                                                  打印本工具包所在目录
  *
@@ -45,11 +46,26 @@ switch (cmd) {
   case "check": {
     // 文件名和选项分开：选项写在文件名前面也行
     const file = rest.find((a) => !a.startsWith("--"));
-    if (!file) usage();
     const json = rest.includes("--json");
-    const r = require("../lib/gongwen-core").runChecks(file, rest.includes("--strict"), { json });
-    if (json) console.log(JSON.stringify(r.report, null, 2));
-    process.exit(r.fault ? 2 : r.ok ? 0 : 1);
+    let r;
+    try {
+      if (!file) throw new Error("缺少文件名。用法：gongwen check 稿子.docx [--strict] [--json]");
+      r = require("../lib/gongwen-core").runChecks(file, rest.includes("--strict"), { json });
+    } catch (e) {
+      if (!json) {
+        if (!file) usage();
+        throw e;
+      }
+      // --json 时 stdout 必须有一份可解析的 JSON，出错也不例外
+      r = { fault: true, report: { file: file ? path.basename(file) : null, status: "fault", blocking: 0, message: e.message, checks: [] } };
+    }
+    if (json) {
+      console.log(JSON.stringify(r.report, null, 2));
+      process.exitCode = { pass: 0, hit: 1, fault: 2 }[r.report.status];
+    } else {
+      process.exitCode = r.fault ? 2 : r.ok ? 0 : 1;
+    }
+    break;
   }
   case "pdf":
     process.exit(run(process.platform === "win32" ? "python" : "python3", "tools/check-pdf.py", rest));

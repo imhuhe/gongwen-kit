@@ -43,7 +43,7 @@ node "/Users/me/.agents/skills/gongwen-kit/bin/gongwen.js" where   # 打印工�
    核对后属实就改，不属实（不同主语、不同口径）就留着，不必为消提示改写原文。
    **同一份稿子最多改三轮。** 三轮后仍有拦稿命中，停下，把机检输出原样交给用户，
    说明哪几条没过、为什么没能改掉，不要再试。
-   要逐条的结构化结果时用 `check --json`，看 `status`：`pass` 全过；`hit` 有拦稿命中，
+   要逐条的结构化结果时用 `check --json`（退出码与 `status` 一致：0、1、2），看 `status`：`pass` 全过；`hit` 有拦稿命中，
    `blocking` 为 true 的必须改，为 false 的只是提示；`fault` 是工具故障，不是稿子的问题，
    先修环境，不要改稿子。
 4. **交付**：.docx 给用户；要 PDF 就在 Word 里导出，再按需跑

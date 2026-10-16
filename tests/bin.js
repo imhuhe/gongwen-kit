@@ -61,14 +61,28 @@ assert.strictEqual(gw("new", "--form", "wen", "--out", "b.js", "--title", "关�
 run(["b.js"]); // 出稿时机检会命中并以非零退出，docx 照样写出
 assert.ok(fs.existsSync(path.join(cwd, "b.docx")), "没写出 b.docx");
 r = gw("check", "b.docx", "--json");
-assert.strictEqual(r.status, 0, "不带 --strict 时命中不改变退出码");
+assert.strictEqual(r.status, 1, "--json 时退出码由 status 决定：有拦稿命中就是 1，不看 --strict");
 rep = JSON.parse(r.stdout);
 assert.strictEqual(rep.status, "hit");
 assert.ok(rep.blocking >= 1, "应有拦稿命中");
 const style = rep.checks.find((c) => c.check === "文风");
 assert.ok(style.hits.some((h) => h.rule === "异形词" && h.blocking), "文风层应报出异形词且标 blocking");
-assert.strictEqual(gw("check", "b.docx", "--json", "--strict").status, 1, "--strict 下命中应返回 1");
-rep = JSON.parse(gw("check", "不存在.docx", "--json").stdout);
-assert.strictEqual(rep.status, "fault", "读不到文件时 JSON 的 status 应为 fault");
+assert.ok(style.hits.some((h) => h.rule === "异形词"), "rule 应是规则名");
+assert.strictEqual(gw("check", "b.docx", "--json", "--strict").status, 1, "带 --strict 结果相同");
+r = gw("check", "不存在.docx", "--json");
+assert.strictEqual(JSON.parse(r.stdout).status, "fault", "读不到文件时 JSON 的 status 应为 fault");
+assert.strictEqual(r.status, 2);
+// 组名带空格的风格层命中（「AI 套话」），rule 必须是完整组名，不能被切成「AI」
+assert.strictEqual(gw("new", "--form", "wen", "--out", "c.js", "--title", "值得一提的是工作通知").status, 0);
+run(["c.js"]);
+rep = JSON.parse(gw("check", "c.docx", "--json").stdout);
+const aiHit = rep.checks.find((c) => c.check === "文风").hits.find((h) => h.detail.includes("值得一提的是"));
+assert.ok(aiHit, "文风层应命中「值得一提的是」");
+assert.strictEqual(aiHit.rule, "AI 套话", "rule 应为完整组名");
+assert.strictEqual(aiHit.blocking, false, "风格层不拦稿");
+// 出错路径也必须有可解析的 JSON：缺文件名
+r = gw("check", "--json");
+assert.strictEqual(r.status, 2, "缺文件名应返回 2");
+assert.strictEqual(JSON.parse(r.stdout).status, "fault", "缺文件名时 --json 也要给出 fault 的 JSON");
 
 console.log("统一入口测试通过（在仓库之外的目录走完 new、出稿、check、fix、check --json 与各负对照）");

@@ -44,14 +44,15 @@ async function bodyOf(file) {
     process.exit(2);
   }
   const body = raw.replace(/「[^」\n]*」/g, "　").replace(/“[^”\n]*”/g, "　");
-  const { norm, style } = scan(body);
+  const { norm, style, normRules, styleRules } = scan(body);
   if (process.argv.includes("--json")) {
-    const row = (blocking) => (l) => ({ rule: l.split(/[：（\s]/)[0], detail: l, blocking });
+    const row = (blocking, rules) => (l, i) => ({ rule: rules[i], detail: l, blocking });
     console.log(JSON.stringify({
       check: "文风", file: name,
-      hits: [...norm.map(row(true)), ...style.map(row(false))],
+      hits: [...norm.map(row(true, normRules)), ...style.map(row(false, styleRules))],
     }));
-    if (norm.length && strict) process.exit(1);
+    // 不调 process.exit：stdout 是管道时，输出较大会在刷完之前被截断
+    if (norm.length && strict) process.exitCode = 1;
     return;
   }
   if (!norm.length && !style.length) {
