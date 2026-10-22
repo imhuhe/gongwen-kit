@@ -1,6 +1,6 @@
 ---
 name: gongwen-kit
-description: 中文公文（党政机关、央国企场景）Word 生成、修复与合规机检：按 GB/T 9704 生成标准 .docx——通知、报告、请示、函、纪要、管理办法等，含红头、发文字号、版记；出稿自动机检（体例、数字、文风）；现成 .docx 按国标修复，改动写成修订痕迹。不适用于合同、简历、普通商务报告等非公文的 Word 文档。Use when creating, fixing, formatting, or machine-checking Chinese official documents (gongwen) as Word files; not for general Word documents.
+description: 中文公文（党政机关、央国企场景）Word 生成、修复与合规机检：按 GB/T 9704 生成标准 .docx——通知、报告、请示、函、纪要、管理办法等，含红头、发文字号、版记；出稿自动机检（体例、数字、文风）；现成 .docx 按国标修复，版式直接改、体例写成修订痕迹、数字只插批注。不适用于合同、简历、普通商务报告等非公文的 Word 文档。Use when creating, fixing, formatting, or machine-checking Chinese official documents (gongwen) as Word files; not for general Word documents.
 ---
 
 # gongwen-kit
@@ -47,14 +47,18 @@ node "/Users/me/.agents/skills/gongwen-kit/bin/gongwen.js" where   # 打印工�
    `blocking` 为 true 的必须改，为 false 的只是提示；`fault` 是工具故障，不是稿子的问题，
    先修环境，不要改稿子。
 4. **交付**：.docx 给用户；要 PDF 就在 Word 里导出，再按需跑
-   `node "$KIT/bin/gongwen.js" pdf 导出件.pdf` 核字体与版面。
+   `node "$KIT/bin/gongwen.js" pdf 导出件.pdf` 核字体与版面（需要 PyMuPDF；缺它时退出码 2）。
 
 只想体检、不改文件时：`node "$KIT/bin/gongwen.js" check 稿子.docx --strict`，体例、数字、文风三道依次跑完。
 
 用户给的是**现成的 .docx**（手写稿、旧模板、别人发来的）要改格式时，不重写，走修复：
-`node "$KIT/bin/gongwen.js" fix 稿子.docx`，输出「稿子-修订.docx」，原文件不动。版式直接改；
-体例写成修订痕迹由用户逐条接受或拒绝；数字问题只插批注，不替用户改数。
-把终端里的修复报告转述给用户，提醒在 Word「审阅」里过一遍修订和批注。细则见 `docs/修复.md`。
+先 `node "$KIT/bin/gongwen.js" fix 稿子.docx --dry-run` 看报告，确认后再
+`node "$KIT/bin/gongwen.js" fix 稿子.docx` 写「稿子-修订.docx」，原文件不动。
+版式直接改（只改正文/层次标题/标题/页码；表题、附件页、版记、纪要名单、份号密级、红头、
+表格、文本框保持原格式）；体例写成修订痕迹由用户逐条接受或拒绝；数字问题只插批注，不替用户改数。
+信函/纪要被识别后自动跳过通用版式（要强制用 `--layout`）；条文体按章小标宋、条仿宋处理。
+**不要对要交付的稿子直接接受全部修订**；把终端报告转述给用户，提醒在 Word「审阅」里过一遍。
+细则见 `docs/修复.md`。
 
 ## 公文要素速查（GB/T 9704—2012）
 
@@ -81,7 +85,8 @@ node "/Users/me/.agents/skills/gongwen-kit/bin/gongwen.js" where   # 打印工�
 - 附件另面编排：附件页接在落款、附注之后、版记之前，用
   `fujianPage({ n, title, body })`（标记顶格三号黑体、标题第三行居中、页码连续；
   单附件不编顺序号；不与正文一起装订的传 `detached: "×发〔2026〕1号"`）
-- 落款默认加盖印章形态（右空四字）；无公章的传 `luokuan({ ..., sealed: false })`
+- 落款：加盖印章形态下，成文日期右空四字，单一机关署名以日期为准居中；联合行文各署名右空四字；
+  无公章的传 `luokuan({ ..., sealed: false })`
 - 结尾用语：请示用「妥否，请批示」，报告用「特此报告」
 - 上手就照 `templates/complete.js`（全构件）与 `templates/notice.js`（真实场景）；
   **改版式之前先读 `docs/版式.md`**——校准值与坑都在那里

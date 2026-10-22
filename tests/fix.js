@@ -15,10 +15,12 @@ const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
 const JSZip = require("jszip");
+const docx = require("docx");
 const { editsFor } = require("../lib/fix/text-rules");
 const { acceptAll, rejectAll } = require("../lib/fix/revisions");
 const { textOf } = require("../lib/table-read");
 const { build } = require("./messy-docx");
+const G = require("../lib/gongwen-core").form("wen");
 const checkDoc = require("../checks/check-doc");
 const { scan } = require("../checks/style-scan");
 
@@ -30,6 +32,13 @@ const apply = (t, es) => { let o = "", i = 0; for (const e of es) { o += t.slice
 // 段落文字（实体解码后比：原稿写 &quot;、改后写 " 是同一个字）
 const { decode } = require("../lib/fix/runs");
 const paraTexts = (xml) => (xml.match(/<w:p(?:\s[^>]*)?>(?:(?!<w:p[\s>])[\s\S])*?<\/w:p>/g) || []).map((p) => decode(textOf(p)));
+// 段落签名：文字 + pPr + 每个 run 的 rPr。合规件 fix 前后必须逐段相同；
+// 只数修订/批注会漏掉「表题/附件页/版记被直接改字体」这类静默误改。
+const paraSig = (xml) => (xml.match(/<w:p(?:\s[^>]*)?>(?:(?!<w:p[\s>])[\s\S])*?<\/w:p>/g) || []).map((p) => {
+  const ppr = ((p.match(/<w:pPr>[\s\S]*?<\/w:pPr>/) || [""])[0]).replace(/\s+/g, " ");
+  const runs = [...p.matchAll(/<w:r\b[\s\S]*?<\/w:r>/g)].map((r) => ((r[0].match(/<w:rPr>[\s\S]*?<\/w:rPr>/) || [""])[0]).replace(/\s+/g, " "));
+  return JSON.stringify([decode(textOf(p)), ppr, runs]);
+});
 const ME = "gongwen-kit";
 const docXml = async (file) => (await JSZip.loadAsync(fs.readFileSync(file))).file("word/document.xml").async("string");
 const fix = (file, out) => execFileSync("node", [path.join(ROOT, "tools/fix-doc.js"), file, "--out", out], { encoding: "utf8" });
@@ -51,6 +60,8 @@ const fix = (file, out) => execFileSync("node", [path.join(ROOT, "tools/fix-doc.
     ["纯小数", "厚度.5毫米", "厚度0.5毫米"],
     // 该放过的
     ["网址不改", "见 https://a.b/c,d 页", "见 https://a.b/c,d 页"],
+    ["文件名不改", "详见公文.docx", "详见公文.docx"],
+    ["域名不改", "访问中文.com", "访问中文.com"],
     ["引号里的原话不改", "「筹画」一词", "「筹画」一词"],
     ["时刻不改", "10:30开会", "10:30开会"],
     ["序号点不改", "附件：1.工作方案", "附件：1.工作方案"],
@@ -138,8 +149,8 @@ const fix = (file, out) => execFileSync("node", [path.join(ROOT, "tools/fix-doc.
   ok(/<w:rPrDefault><w:rPr><w:rFonts w:ascii="FangSong"/.test(styles), "默认字体仿宋");
   ok(/w:styleId="1">[\s\S]*?SimHei[\s\S]*?<\/w:style>/.test(styles), "中文样式 ID 的一级标题改成黑体");
   ok(/w:firstLineChars="200"/.test(styles), "正文首行缩进二字");
-  ok(!(out.match(/<w:p(?:\s[^>]*)?>(?:(?!<w:p[\s>])[\s\S])*?<\/w:p>/g) || []).some((p) => /w:line="360"/.test(p) && !/FF0000|RedHead/.test(p)),
-    "手设的 1.5 倍行距交还网格（红头不动）");
+  ok(!/w:line="360"/.test(paraOf(out, "为做好项目申报")), "正文手设的 1.5 倍行距交还网格");
+  ok(/w:line="360"/.test(paraOf(out, "××市发展和改革委员会")), "落款署名的手设行距不被正文规则改掉");
   ok(z.file("word/footerGwOdd.xml") && /PAGE/.test(await z.file("word/footerGwOdd.xml").async("string")), "加了公文页码");
   ok(/原文件未改动/.test(report), "报告写明原文件未改动");
   {
@@ -149,16 +160,83 @@ const fix = (file, out) => execFileSync("node", [path.join(ROOT, "tools/fix-doc.
   }
   ok(fs.readFileSync(messy).equals(fs.readFileSync(messy)) && (await docXml(messy)) === orig, "原文件没被改");
 
+  console.log("\n== 角色保护 ==");
+  {
+    const mk = async (name, children) => {
+      const d = new docx.Document({ externalStyles: G.externalStyles(), numbering: G.numbering, sections: [{ ...G.sectionProps(), children }] });
+      const f = path.join(TMP, name);
+      fs.writeFileSync(f, await docx.Packer.toBuffer(d));
+      return f;
+    };
+    const red = path.join(TMP, "red.docx");
+    await mk("red.docx", [
+      new docx.Paragraph({ children: [new docx.TextRun({ text: "××市筹画局", color: "FF0000" })] }),
+      G.p("正文。"),
+    ]);
+    fix(red, path.join(TMP, "red-out.docx"));
+    const redText = paraTexts(acceptAll(await docXml(path.join(TMP, "red-out.docx")), ME)).join("\n");
+    ok(redText.includes("××市筹画局"), "红头机关名不按异形词改");
+
+    const tblFile = path.join(TMP, "tbl.docx");
+    await mk("tbl.docx", [
+      G.p("表。"),
+      ...G.table({ head: ["项目", "数值"], widths: [3000, 3000], rows: [["甲", "１００"], ["乙", "100kWh"]] }),
+    ]);
+    fix(tblFile, path.join(TMP, "tbl-out.docx"));
+    const tblXml = await docXml(path.join(TMP, "tbl-out.docx"));
+    ok(!/<w:(?:ins|del)\b/.test(tblXml), "表格里的数字不自动改（只插批注）");
+    ok(/１００/.test(tblXml) && /100kWh/.test(tblXml), "表格原值保留");
+
+    // 表格开标签带属性（Word 的 w:rsidR）时，整张表不能被当成正文
+    const attrFile = path.join(TMP, "tbl-attr.docx");
+    {
+      const z = await JSZip.loadAsync(fs.readFileSync(tblFile));
+      const x = await z.file("word/document.xml").async("string");
+      z.file("word/document.xml", x.replace("<w:tbl>", '<w:tbl w:rsidR="00A1B2C3">'));
+      fs.writeFileSync(attrFile, await z.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
+    }
+    fix(attrFile, path.join(TMP, "tbl-attr-out.docx"));
+    const attrXml = await docXml(path.join(TMP, "tbl-attr-out.docx"));
+    ok(!/<w:(?:ins|del)\b/.test(attrXml) && /１００/.test(attrXml) && /100kWh/.test(attrXml),
+      "表格带属性时仍按表格保护");
+    ok(!/项目金额/.test(attrXml), "表格头不会被当成标题");
+
+    // 上行文多个签发人：续行只有姓名、右对齐，不能被当成正文
+    const signersFile = path.join(TMP, "signers.docx");
+    await mk("signers.docx", [
+      ...G.letterhead({ agency: "××局", docNo: { dept: "×发", year: 2026, seq: 1 }, signers: ["张××", "李××", "王××"] }),
+      ...G.title(["关于测试事项的请示"]),
+      G.p("正文。"),
+      ...G.luokuan({ unit: "××局", date: "2026 年 10 月 23 日" }),
+    ]);
+    const signersBefore = await docXml(signersFile);
+    fix(signersFile, path.join(TMP, "signers-out.docx"));
+    ok(JSON.stringify(paraSig(signersBefore)) === JSON.stringify(paraSig(await docXml(path.join(TMP, "signers-out.docx")))),
+      "多签发人续行不被当成正文");
+
+    const dry = path.join(TMP, "dry.docx");
+    execFileSync("node", [path.join(ROOT, "tools/fix-doc.js"), tblFile, "--dry-run", "--out", dry], { encoding: "utf8", stdio: "pipe" });
+    ok(!fs.existsSync(dry), "--dry-run 不写文件");
+
+    let noOut = false;
+    try { execFileSync("node", [path.join(ROOT, "tools/fix-doc.js"), tblFile, "--out"], { encoding: "utf8", stdio: "pipe" }); } catch (e) { noOut = e.status === 2; }
+    ok(noOut, "--out 缺值返回 2");
+  }
+
   console.log("\n== 合规件不误改 ==");
-  for (const t of ["notice", "gongwen-qingshi", "complete", "xinhan", "jiyao", "qiye"]) {
+  for (const t of ["notice", "gongwen-qingshi", "complete", "xinhan", "jiyao", "qiye", "gongwen-guanli"]) {
     const src = path.join(TMP, `${t}.docx`);
     execFileSync("node", [path.join(ROOT, "templates", `${t}.js`), src], { encoding: "utf8", stdio: "pipe" });
     const dst = path.join(TMP, `${t}-修订.docx`);
+    const before = await docXml(src);
     const r = fix(src, dst);
     const x = await docXml(dst);
     const nRev = (x.match(/<w:(?:ins|del|rPrChange)\b/g) || []).length;
     const nCom = (x.match(/<w:commentReference\b/g) || []).length;
-    ok(nRev === 0 && nCom === 0, `${t}：修订 ${nRev} 处、批注 ${nCom} 条${nRev + nCom ? "\n" + r : ""}`);
+    const sigA = paraSig(before), sigB = paraSig(x);
+    const diff = sigA.findIndex((v, i) => v !== sigB[i]);
+    ok(nRev === 0 && nCom === 0 && sigA.length === sigB.length && diff < 0,
+      `${t}：修订 ${nRev} 处、批注 ${nCom} 条、段落格式 ${diff < 0 ? "不变" : "第 " + (diff + 1) + " 段变了"}${nRev + nCom || diff >= 0 ? "\n" + r : ""}`);
   }
 
   fs.rmSync(TMP, { recursive: true, force: true });

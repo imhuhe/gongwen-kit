@@ -43,8 +43,17 @@ async function bodyOf(file) {
     console.error("文风机检读不进这份文件（工具故障，不是稿子的问题）：", e.message);
     process.exit(2);
   }
-  const body = raw.replace(/「[^」\n]*」/g, "　").replace(/“[^”\n]*”/g, "　");
-  const { norm, style, normHits, styleHits } = scan(body);
+  const body = raw.replace(/「[^」\n]*」/g, "　").replace(/“[^”\n]*”/g, "　")
+    .replace(/《[^》\n]*》/g, "　");
+  let scanned;
+  try {
+    scanned = scan(body);
+  } catch (e) {
+    // 规范层词表缺失/损坏是工具故障，不能静默给一个「通过」。
+    console.error("文风机检跑不起来（工具故障，不是稿子的问题）：", e.message);
+    process.exit(2);
+  }
+  const { norm, style, normHits, styleHits } = scanned;
   if (process.argv.includes("--json")) {
     const row = (blocking) => (h) => ({ rule: h.rule, detail: h.text, blocking });
     console.log(JSON.stringify({

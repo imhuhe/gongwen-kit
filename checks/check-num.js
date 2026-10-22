@@ -38,7 +38,7 @@ const { textOf, rowCells } = require("../lib/table-read");
 const TOL_REL = 0.005;
 const TOL_ABS = 0.02;
 const PCT_TOL = 0.5;          // 百分比构成和与 100 的容差
-const TOTAL_LABEL = /^(合计|总计|小计|合\s*计|总\s*计|小\s*计)$/;
+const TOTAL_LABEL = /^(合计|总计|小计|合\s*计|总\s*计|小\s*计)(?:[（(][^）)]*[）)])?\s*[:：]?$/;
 
 // 去掉某个标签的整块，按嵌套深度配对（非贪婪正则遇到表中表、文本框会提前收尾）
 function stripBlocks(xml, tag) {
@@ -81,7 +81,7 @@ function isRateLabel(s) {
 }
 
 function readTables(xml) {
-  return (xml.match(/<w:tbl>[\s\S]*?<\/w:tbl>/g) || [])
+  return (xml.match(/<w:tbl(?:\s[^>]*)?>[\s\S]*?<\/w:tbl>/g) || [])
     .map((tb, idx) => {
       const trs = tb.match(/<w:tr[ >][\s\S]*?<\/w:tr>/g) || [];
       const rows = trs.map((tr) => rowCells(tr, textOf));
@@ -140,13 +140,13 @@ async function check(file) {
       if (labelIdx < 0) return;
       const label = cells[labelIdx].replace(/\s/g, "");
       // 上一段：往上找到上一个合计类行（小计找任意合计类行，合计／总计只找合计／总计）
-      const stop = (r) => (label === "小计" ? isTotalRow(rows[r]) : rows[r].some((c) => /^(合|总)\s*计$/.test(c || "")));
+      const stop = (r) => (/^小\s*计/.test(label) ? isTotalRow(rows[r]) : rows[r].some((c) => /^(合|总)\s*计/.test(c || "")));
       let from = ri - 1;
       while (from >= first && !stop(from)) from--;
       let seg = [];
       for (let r = from + 1; r < ri; r++) if (!isRateRow(rows[r])) seg.push(r);
-      if (label !== "小计") {
-        const subs = seg.filter((r) => rows[r].some((c) => /^小\s*计$/.test(c || "")));
+      if (!/^小\s*计/.test(label)) {
+        const subs = seg.filter((r) => rows[r].some((c) => /^小\s*计/.test(c || "")));
         if (subs.length) seg = subs;
         else seg = seg.filter((r) => !isTotalRow(rows[r]));
       }

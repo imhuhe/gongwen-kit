@@ -55,6 +55,9 @@ r = gw("check", "a.docx", "--json");
 assert.strictEqual(r.status, 0, "--json 通过时应返回 0");
 let rep = JSON.parse(r.stdout);
 assert.strictEqual(rep.status, "pass");
+assert.strictEqual(rep.toolVersion, require("../package.json").version, "JSON 应带工具版本");
+assert.match(rep.generatedAt, /^\d{4}-\d{2}-\d{2}T/, "JSON 应带生成时间");
+assert.match(rep.sha256, /^[0-9a-f]{64}$/, "JSON 应带文档 sha256");
 // agent 的 shell 常把 stdout 与 stderr 合并，--json 通过时 stderr 必须为空，否则合并后解析不了
 assert.strictEqual(r.stderr, "", "check --json 通过时 stderr 应为空：" + r.stderr);
 assert.deepStrictEqual(rep.checks.map((c) => c.check), ["体例", "数字自洽", "文风"]);
@@ -72,7 +75,9 @@ assert.ok(style.hits.some((h) => h.rule === "异形词" && h.blocking), "文风�
 assert.ok(style.hits.some((h) => h.rule === "异形词"), "rule 应是规则名");
 assert.strictEqual(gw("check", "b.docx", "--json", "--strict").status, 1, "带 --strict 结果相同");
 r = gw("check", "不存在.docx", "--json");
-assert.strictEqual(JSON.parse(r.stdout).status, "fault", "读不到文件时 JSON 的 status 应为 fault");
+const missing = JSON.parse(r.stdout);
+assert.strictEqual(missing.status, "fault", "读不到文件时 JSON 的 status 应为 fault");
+assert.strictEqual(missing.sha256, null, "读不到文件时 sha256 应为 null");
 assert.strictEqual(r.status, 2);
 // 组名带空格的风格层命中（「AI 套话」），rule 必须是完整组名，不能被切成「AI」
 assert.strictEqual(gw("new", "--form", "wen", "--out", "c.js", "--title", "值得一提的是工作通知").status, 0);

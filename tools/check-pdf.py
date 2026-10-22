@@ -30,7 +30,8 @@ import sys
 try:
     import pymupdf
 except ImportError:
-    sys.exit("需要 PyMuPDF：uv run --with pymupdf tools/check-pdf.py <pdf>，或使用装了它的 venv")
+    print("需要 PyMuPDF：uv run --with pymupdf tools/check-pdf.py <pdf>，或使用装了它的 venv", file=sys.stderr)
+    sys.exit(2)
 
 # 白名单：国标五类字体 + 方正小标宋的常见文件名 + macOS 预览替代。
 ALLOW = [
@@ -80,7 +81,7 @@ CJK = re.compile(r"[\u4e00-\u9fff]")
 
 
 def check_fonts(doc):
-    bad, title_bad = {}, {}
+    bad, title_bad, body_bad = {}, {}, {}
     for pno, page in enumerate(doc, 1):
         for block in page.get_text("dict")["blocks"]:
             for line in block.get("lines", []):
@@ -94,11 +95,17 @@ def check_fonts(doc):
                     elif CJK.search(span["text"]) and span["size"] >= TITLE_MIN \
                             and not any(t in font for t in TITLE_FONTS):
                         title_bad.setdefault(font, []).append(hit)
+                    # 三号（16pt）含汉字却用宋体：正文应为仿宋/黑体/楷体，宋体是标题
+                    # 或页码的字体；正文回退成宋体会在这里被抓住。
+                    elif CJK.search(span["text"]) and 15.5 <= span["size"] <= 16.6 and "SimSun" in font:
+                        body_bad.setdefault(font, []).append(hit)
     msgs = [f"字体不在白名单　{f} ×{len(h)}，例：{h[0][1]!r}（p{h[0][0]}）" for f, h in bad.items()]
     if msgs:
         msgs.append("　白名单：" + "、".join(ALLOW))
     msgs += [f"标题字体回退　{f} ×{len(h)}，例：{h[0][1]!r}（p{h[0][0]}）；标题与发文机关标志应为方正小标宋，"
              f"本机可能没装（见 docs/字体.md）" for f, h in title_bad.items()]
+    msgs += [f"正文字体回退　{f} ×{len(h)}，例：{h[0][1]!r}（p{h[0][0]}）；三号汉字应为仿宋/黑体/楷体，"
+             f"宋体是页码或表格的字体" for f, h in body_bad.items()]
     return msgs
 
 

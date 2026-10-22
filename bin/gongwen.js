@@ -18,6 +18,7 @@
 "use strict";
 const path = require("path");
 const { spawnSync } = require("child_process");
+const pkg = require("../package.json");
 
 const KIT = path.resolve(__dirname, "..");
 const [cmd, ...rest] = process.argv.slice(2);
@@ -57,7 +58,8 @@ switch (cmd) {
         throw e;
       }
       // --json 时 stdout 必须有一份可解析的 JSON，出错也不例外
-      r = { fault: true, report: { file: file ? path.basename(file) : null, status: "fault", blocking: 0, message: e.message, checks: [] } };
+      r = { fault: true, report: { file: file ? path.basename(file) : null, status: "fault", blocking: 0, message: e.message, checks: [],
+        toolVersion: pkg.version, generatedAt: new Date().toISOString(), sha256: null } };
     }
     if (json) {
       console.log(JSON.stringify(r.report, null, 2));

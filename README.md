@@ -9,13 +9,13 @@
 </p>
 
 按 GB/T 9704《党政机关公文格式》生成标准 Word 公文，出稿当场机检；现成的稿子也能修，
-改动写成 Word 修订痕迹逐条确认。写稿人只管内容，版式交给国标，数字对不对得上交给机检。
+版式直接改，体例写成 Word 修订痕迹逐条确认，数字只插批注。写稿人只管内容，版式交给国标，数字对不对得上交给机检。
 
 面向党政机关、央国企和一般单位的日常公文：通知、报告、请示、函、纪要、管理办法、条例。
 
 ![四份样张的首页：通知、请示、信函、纪要](assets/samples.png)
 
-## 30 秒上手
+## 快速上手
 
 ```bash
 git clone https://github.com/imhuhe/gongwen-kit.git && cd gongwen-kit
@@ -52,6 +52,9 @@ npm test          # 生成七份样张，每份跑完三道机检；再跑全部
 出图的机器没装方正小标宋，样张 PDF 的标题和机关标志用 Songti SC Black 代替；装了字体后
 重新生成，就是国标用字。
 
+> 0.4.1 起落款署名按 GB/T 9704 7.3.5.1「以成文日期为准居中」生成；`docs/样张/` 的 PDF
+> 仍是 0.4.0 导出的右对齐样张，需要用 Word 重新导出后才能反映这一改动。
+
 ## 它查什么
 
 每份稿子写盘后自动跑三道机检，**哪一道不过就非零退出**，不算出稿。
@@ -62,8 +65,9 @@ npm test          # 生成七份样张，每份跑完三道机检；再跑全部
 | 数字自洽 | 表格合计与分项、百分比构成、跨表同一指标；正文「以下三点」与实际列出的条数；正文同一指标多处取值、正文与表格取值（这两项只提示） | `计数与列举：「以下三项」其后列了 2 个下一级标题` |
 | 文风 | 异形词、中文里的半角标点（规范层，命中即拦）；套话、黑话、空词（风格层，只提示） | `异形词 1 处（GF 1001-2001）：筹画 → 筹划` |
 
-每条规则都有一份「必错的标本」做负对照，规则报不出来，测试就失败；靠标签匹配、可能误报的规则只提示不拦稿，另有「必过的标本」防误报。机检输出可以存成文件，
-作为合规凭据留档。
+体例机检的每条规则都有「必错的标本」做负对照；文风规范层与数字自洽同样有负对照，规则报不出来，测试就失败。
+靠标签匹配、可能误报的规则（我司、GDP、斜体等）只提示不拦稿，另有「必过的标本」防误报。
+`check --json` 的汇总带工具版本、生成时间与文档 sha256，可以存成文件，作为合规凭据留档。
 
 现成的 .docx 也能直接修，见下文「修复现成文件」。
 
@@ -144,10 +148,11 @@ Claude Code 换成 `~/.claude/skills/gongwen-kit`。
 
 之后直接说「按公文格式起草一份关于××的通知」即可。
 
-**与通用 Office skill 并存。** DeepSeek Harness 自带一组通用 Office skill（`office`、`office-docx` 等），
-模型按任务从目录里自己选。本 skill 的 `description` 写明了只管中文公文、不管合同简历等一般 Word 文档，
-`SKILL.md` 里也要求中文公文一律走本 skill。两者可以同时装；在 DeepSeek Harness 里模型是否总能选对，
-尚未实测。
+**与通用 Office skill 并存。** 是否自带通用 Office/Word skill 取决于安装的 bundle 与 profile：
+本机 DeepSeek Harness 0.2.0-rc.2 的 web profile 没有挂载 `office`，Claude Code 侧则可能使用自带的 Word 能力。
+本 skill 的 `description` 写明了只管中文公文、不管合同简历等一般 Word 文档，`SKILL.md` 也要求中文公文一律走本 skill。
+两者可以同时装；但模型是否总能选对尚未盲测，中文公文请在 `CLAUDE.md` 或提示词里显式锁定本 skill，
+不要用通用 skill 重做版式。
 
 **与 agent 的工作目录无关。** agent 的工作目录是你的项目，不是本仓库，所以命令统一走入口脚本，
 任何目录都能调：
@@ -156,7 +161,8 @@ Claude Code 换成 `~/.claude/skills/gongwen-kit`。
 node /path/to/gongwen-kit/bin/gongwen.js new --form wen --out 稿子.js   # 起稿源脚本
 node /path/to/gongwen-kit/bin/gongwen.js check 稿子.docx --strict       # 三道机检依次跑完
 node /path/to/gongwen-kit/bin/gongwen.js check 稿子.docx --json         # 同上，stdout 只出一份 JSON（出错也是），退出码 0 通过、1 命中、2 工具故障
-node /path/to/gongwen-kit/bin/gongwen.js fix 稿子.docx                  # 修复现成文件
+node /path/to/gongwen-kit/bin/gongwen.js fix 稿子.docx --dry-run        # 修复预演：只报告，不写文件
+node /path/to/gongwen-kit/bin/gongwen.js fix 稿子.docx                  # 修复现成文件（输出副本，原文件不动）
 ```
 
 `SKILL.md` 里把这个目录记作 `$KIT`，它只是记号，不是环境变量：agent 要换成加载 skill 时看到的 `SKILL.md` 所在目录的绝对路径。
@@ -164,7 +170,10 @@ node /path/to/gongwen-kit/bin/gongwen.js fix 稿子.docx                  # 修�
 
 **验证状态。** 目录约定取自上表四家的官方文档与源码说明（2026-10-17 核对）；入口脚本在仓库之外的目录里走完起稿、
 出稿、机检、修复，`npm test` 覆盖这一点，`SKILL.md` 的 frontmatter 也按 DeepSeek Harness
-与 Codex 的规则在测试里近似校验（自写的简易解析，不是它们的真实加载器）。Codex 与 DeepSeek Harness 上的真实加载与端到端起草**尚未实测**。
+与 Codex 的规则在测试里近似校验（自写的简易解析，不是它们的真实加载器）。
+2026-10-23 实测：DeepSeek Harness 0.2.0-rc.2（web profile）能加载本 skill，并走完起稿、出稿、三道机检；
+本机 Claude Code 2.1.308 已确认用户级 skill 路径（`~/.claude/skills/gongwen-kit`）指向本仓，
+Claude Code 内的端到端由该会话做验收。Codex 上的真实加载与端到端起草仍未实测。
 DeepSeek Harness 仍是 developer preview，目录约定可能变。
 
 ## 写自己的公文
@@ -182,19 +191,22 @@ node 我的稿子.js                                     # 出稿，写盘后自
 手写的、别人发来的、旧模板出的 .docx，交给它修一遍：
 
 ```bash
-node tools/fix-doc.js 某文件.docx      # 输出 某文件-修订.docx，原文件不动
+node tools/fix-doc.js 某文件.docx --dry-run   # 先预演：只报告，不写文件
+node tools/fix-doc.js 某文件.docx             # 输出 某文件-修订.docx，原文件不动
 ```
 
 分三档处理：
 
 | 档 | 怎么改 | 例子 |
 |---|---|---|
-| 版式 | 直接改 | 版心与网格、仿宋三号、层次标题字体、公文标题、页码 |
+| 版式 | 直接改 | 版心与网格、正文与层次标题字体、公文标题、页码；表题/附件页/版记/纪要名单/份号密级/红头/表格/文本框不交还样式 |
 | 体例与规范层文风 | 写成 Word 修订，在「审阅」里逐条接受或拒绝 | `【2026】第012号 → 〔2026〕12号`、`05月08日 → 5月8日`、`筹画 → 筹划` |
 | 数字与要靠判断的项 | 不改，插批注 | 合计与分项对不上、「以下三点」只列了两点 |
 
 数字一律不自动改：合计错还是分项错，工具判断不了。引号与书名号里的原话、网址、超链接、
-表格里的数字、红头都不动；全部拒绝修订，正文逐字等于原文。规则、不改什么、已知限制见
+表格里的数字、红头与版头、表题、附件页、版记、纪要名单、份号密级都不动；全部拒绝修订，正文逐字等于原文。
+信函/纪要格式会自动跳过通用版式（`--layout` 可强制）；条文体按章小标宋、条仿宋处理。
+默认对要交付的稿子先跑 `--dry-run`，确认报告后再写文件。规则、不改什么、已知限制见
 [docs/修复.md](docs/修复.md)。
 
 只体检不改：

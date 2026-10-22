@@ -13,18 +13,22 @@
  */
 const fs = require("fs");
 const path = require("path");
+const { protectedRanges, inRanges } = require("../lib/text-guard");
 
 const DATA = path.join(__dirname, "..", "data");
 const CJK = "\\u4e00-\\u9fff\\u3000-\\u303f";
 const GROUP_NAME = { ai: "AI 套话", biz: "商业黑话", empty: "空词与对冲", perform: "表演腔" };
 
-function loadTsv(name, cols) {
+function loadTsv(name, cols, { required = false } = {}) {
   const rows = [];
   let text;
   try {
     text = fs.readFileSync(path.join(DATA, name), "utf8");
-  } catch {
-    return rows;   // 词表缺失只让这一项失效，不崩整个机检
+  } catch (e) {
+    // 风格词表缺失只让这一项失效；规范层词表（异形词）缺失是工具故障，
+    // 不能静默放行——否则 --json 会给出一个「文风通过」的假阴性。
+    if (required) throw new Error(`词表缺失：data/${name}（${e.code || e.message}）`);
+    return rows;
   }
   for (const ln of text.split("\n")) {
     if (!ln.trim() || ln.trimStart().startsWith("#")) continue;
@@ -33,6 +37,16 @@ function loadTsv(name, cols) {
     rows.push(p);
   }
   return rows;
+}
+
+// 某个词是否在保护范围之外出现（URL/引号/书名号/文件名/域名里的不算）。
+function hasUnprotected(body, word, guard) {
+  let i = body.indexOf(word);
+  while (i >= 0) {
+    if (!inRanges(guard, i)) return true;
+    i = body.indexOf(word, i + word.length);
+  }
+  return false;
 }
 
 // 标准新增三类（判据本体在私有体系的《AI 输出执行标准》，这里只实现）：
@@ -49,13 +63,14 @@ function scan(body) {
   const normHit = (rule, text) => normHits.push({ rule, text });
   const styleHit = (rule, text) => styleHits.push({ rule, text });
   const anchors = [];   // 规范层命中的原文片段（修复工具挂批注用）
+  const guard = protectedRanges(body);
 
   // ── 规范层 ─────────────────────────────────────────────
   const yx = [];
-  for (const row of loadTsv("yixingci.tsv", 4)) {
+  for (const row of loadTsv("yixingci.tsv", 4, { required: true })) {
     for (const bad of row[1].split("｜")) {
       const w = bad.trim();
-      if (w && body.includes(w)) { yx.push(`${w} → ${row[0]}`); anchors.push(w); }
+      if (w && hasUnprotected(body, w, guard)) { yx.push(`${w} → ${row[0]}`); anchors.push(w); }
     }
   }
   if (yx.length) { normHit("异形词", `异形词 ${yx.length} 处（GF 1001-2001）：${yx.join("、")}`); }
@@ -63,11 +78,14 @@ function scan(body) {
   // 半角标点：只算紧贴中文的那些。例外一档——阿拉伯数字序号的半角下脚点
   // （「附件：1.××××」的「1.」）是 GB/T 15834 附录 B 的正当写法，
   // 不能因为后面紧跟中文就报（我们的附件说明构件自己就这么排版）。
+  // 文件名/域名/网址/引号/书名号里的标点不算（2026-10-23 审计）。
   const halfRe = new RegExp(`[${CJK}][,.!?;:()]|[,.!?;:()][${CJK}]`, "g");
   const half = [];
   let hm;
   while ((hm = halfRe.exec(body))) {
     if (hm[0][0] === "." && hm.index > 0 && /\d/.test(body[hm.index - 1])) continue;
+    const punct = hm[0].search(/[,.!?;:()]/);
+    if (inRanges(guard, hm.index + punct)) continue;
     half.push(hm[0]);
     anchors.push(hm[0]);
   }
@@ -80,7 +98,7 @@ function scan(body) {
   const byGroup = {};
   for (const row of loadTsv("style-words.tsv", 4)) {
     const [bad, good, group] = row;
-    if (body.includes(bad)) (byGroup[group] = byGroup[group] || []).push(`${bad} → ${good}`);
+    if (hasUnprotected(body, bad, guard)) (byGroup[group] = byGroup[group] || []).push(`${bad} → ${good}`);
   }
   for (const [g, items] of Object.entries(byGroup)) {
     styleHit(GROUP_NAME[g] || g, `${GROUP_NAME[g] || g}：${items.join("；")}`);
