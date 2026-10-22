@@ -104,11 +104,14 @@ function textPass(docXml, styles, headingIds, rev, tally, { redStyles = new Set(
     // 右对齐的署名/机关名是专名，不能按异形词改；右对齐的日期（阿拉伯或中文数字）仍允许修。
     const isDate = /^\s*(?:\d{4}|[一二三四五六七八九〇]{4})\s*年/.test(t);
     const rightName = jc === "right" && !isDate;
+    const DOCNO_ONLY = /^\s*[^，。；：]{0,20}〔\d{4}〕\s*第?\s*\d+\s*号\s*$/;
+    const DOCNO_TAB = /^\s*[^，。；：]{0,20}〔\d{4}〕\s*第?\s*\d+\s*号\s+(?:签发人[：:])?[^，。；：\s]{1,20}(?:\s+[^，。；：\s]{1,20})*\s*$/;
+    const isDocNo = (p, text, idx) => idx < 12 && (DOCNO_ONLY.test(text) || ((/<w:tab\/>/.test(p) || /\t/.test(p)) && DOCNO_TAB.test(text)));
     const protectedRole = inRanges(tbl, offset) || inRanges(boxes, offset) || redPara(p)
       || (i < 12 && jc === "right")
       || rightName
       || /<w:framePr\b/.test(p)
-      || /〔\d{4}〕\s*第?\s*\d+\s*号/.test(t)
+      || isDocNo(p, t, i)
       || /^签发人[：:]/.test(t)
       || (centered(p) && /^\s*(表|图|附表)\s*\d/.test(text)
         && (/w:keepNext/.test(p) || nearTable(offset)))
@@ -133,7 +136,7 @@ function textPass(docXml, styles, headingIds, rev, tally, { redStyles = new Set(
       if (r.xml) out = r.xml;
     }
     const it = unitalic(out, rev);
-    if (it.n) tally["斜体改正体"] = (tally["斜体改正体"] || 0) + 1;
+    if (it.n) tally["斜体改正体"] = (tally["斜体改正体"] || 0) + it.n;
     return it.xml;
   });
   return { xml, skipped };
@@ -189,7 +192,11 @@ function toComments(items) {
   if (!docXml) { console.error("读不到 word/document.xml，不是 docx？"); process.exit(2); }
 
   const plain = docXml.split("</w:p>").map(textOf).join("\n");
-  const isZhang = /第[一二三四五六七八九十百]+章/.test(plain) && /第[一二三四五六七八九十百]+条/.test(plain);
+  // 条文体可能只把「第X章」「第X条」放在自动编号里，正文只有「总则」。
+  const numbering = await read(zip, "word/numbering.xml");
+  const isZhang = (/第[一二三四五六七八九十百]+章/.test(plain) && /第[一二三四五六七八九十百]+条/.test(plain))
+    || /<w:lvlText w:val="第%[12]章/.test(numbering)
+    || /<w:lvlText w:val="第%[12]条/.test(numbering);
   const form = isZhang ? "zhang" : "wen";
   const isXinhan = /<w:titlePg\s*\/>|<w:titlePg\b/.test(docXml)
     && /<w:headerReference w:type="first"/.test(docXml) && /<w:footerReference w:type="first"/.test(docXml);

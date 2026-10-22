@@ -228,6 +228,27 @@ const fix = (file, out) => execFileSync("node", [path.join(ROOT, "tools/fix-doc.
     ok(JSON.stringify(paraSig(signersBefore)) === JSON.stringify(paraSig(await docXml(path.join(TMP, "signers-out.docx")))),
       "多签发人续行不被当成正文");
 
+    // 正文引用发文字号不是版头字号，不能整段跳过修订
+    const citeFile = path.join(TMP, "cite.docx");
+    await mk("cite.docx", [new docx.Paragraph({ children: [
+      new docx.TextRun({ text: "根据国办发〔2026〕5号要求，统一筹画规范。", font: { eastAsia: "KaiTi", ascii: "KaiTi" }, size: 24 }),
+    ] })]);
+    const citeReport = fix(citeFile, path.join(TMP, "cite-out.docx"));
+    const citeXml = await docXml(path.join(TMP, "cite-out.docx"));
+    const citeText = paraTexts(acceptAll(citeXml, ME)).join("\n");
+    ok(citeText.includes("筹划") && /异形词 1 处/.test(citeReport) && !/w:sz w:val="24"/.test(citeXml),
+      "正文引用发文字号后仍改异形词、手设字号交还样式");
+
+    // 斜体计数按 run，不按段
+    const italFile = path.join(TMP, "ital2.docx");
+    await mk("ital2.docx", [new docx.Paragraph({ children: [
+      new docx.TextRun({ text: "斜体一", italics: true }),
+      new docx.TextRun({ text: "与" }),
+      new docx.TextRun({ text: "斜体二", italics: true }),
+    ] })]);
+    const italReport = fix(italFile, path.join(TMP, "ital2-out.docx"));
+    ok(/斜体改正体 2 处/.test(italReport), "斜体改正体计数按 run");
+
     const dry = path.join(TMP, "dry.docx");
     execFileSync("node", [path.join(ROOT, "tools/fix-doc.js"), tblFile, "--dry-run", "--out", dry], { encoding: "utf8", stdio: "pipe" });
     ok(!fs.existsSync(dry), "--dry-run 不写文件");
@@ -239,9 +260,10 @@ const fix = (file, out) => execFileSync("node", [path.join(ROOT, "tools/fix-doc.
 
   console.log("\n== 合规件不误改 ==");
   for (const t of ["notice", "gongwen-qingshi", "complete", "xinhan", "jiyao", "qiye", "gongwen-guanli"]) {
-    const src = path.join(TMP, `${t}.docx`);
+    const label = t === "gongwen-guanli" ? "公文管理办法" : t;
+    const src = path.join(TMP, `${label}.docx`);
     execFileSync("node", [path.join(ROOT, "templates", `${t}.js`), src], { encoding: "utf8", stdio: "pipe" });
-    const dst = path.join(TMP, `${t}-修订.docx`);
+    const dst = path.join(TMP, `${label}-修订.docx`);
     const before = await docXml(src);
     const r = fix(src, dst);
     const x = await docXml(dst);
@@ -250,7 +272,15 @@ const fix = (file, out) => execFileSync("node", [path.join(ROOT, "tools/fix-doc.
     const sigA = paraSig(before), sigB = paraSig(x);
     const diff = sigA.findIndex((v, i) => v !== sigB[i]);
     ok(nRev === 0 && nCom === 0 && sigA.length === sigB.length && diff < 0,
-      `${t}：修订 ${nRev} 处、批注 ${nCom} 条、段落格式 ${diff < 0 ? "不变" : "第 " + (diff + 1) + " 段变了"}${nRev + nCom || diff >= 0 ? "\n" + r : ""}`);
+      `${label}：修订 ${nRev} 处、批注 ${nCom} 条、段落格式 ${diff < 0 ? "不变" : "第 " + (diff + 1) + " 段变了"}${nRev + nCom || diff >= 0 ? "\n" + r : ""}`);
+    if (t === "gongwen-guanli") {
+      const z = await JSZip.loadAsync(fs.readFileSync(dst));
+      const styles = await z.file("word/styles.xml").async("string");
+      const h1 = (styles.match(/<w:style\b[^>]*w:styleId="Heading1"[\s\S]*?<\/w:style>/) || [""])[0];
+      const titleFont = process.env.GONGWEN_FONT_TITLE || "方正小标宋简体";
+      ok(/<w:jc w:val="center"\/>/.test(h1) && h1.includes(titleFont) && /章小标宋居中/.test(r),
+        "公文管理办法：章标题样式居中、字体为标题字体，报告口径正确");
+    }
   }
 
   fs.rmSync(TMP, { recursive: true, force: true });
