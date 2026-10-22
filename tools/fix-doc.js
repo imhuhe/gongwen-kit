@@ -79,6 +79,7 @@ function textPass(docXml, styles, headingIds, rev, tally, { redStyles = new Set(
   const plain = docXml.split("</w:p>").map(textOf).join("\n");
   const spacedDates = /\d\s+年\s+\d/.test(plain);
   const tbl = tableRanges(docXml);
+  const nearTable = (pos) => tbl.some(([a]) => a > pos && a - pos < 4000);
   const boxes = [];
   for (const m of docXml.matchAll(/<w:txbxContent>[\s\S]*?<\/w:txbxContent>/g)) boxes.push([m.index, m.index + m[0].length]);
   const inRanges = (rs, pos) => rs.some(([a, b]) => pos >= a && pos < b);
@@ -109,7 +110,8 @@ function textPass(docXml, styles, headingIds, rev, tally, { redStyles = new Set(
       || /<w:framePr\b/.test(p)
       || /〔\d{4}〕\s*第?\s*\d+\s*号/.test(t)
       || /^签发人[：:]/.test(t)
-      || (/w:keepNext/.test(p) && centered(p) && /^\s*(表|图|附表)\s*\d/.test(text))
+      || (centered(p) && /^\s*(表|图|附表)\s*\d/.test(text)
+        && (/w:keepNext/.test(p) || nearTable(offset)))
       || /^(出席|请假|列席)[：:]/.test(t)
       || (i < 6 && (/^\d{6}$/.test(t) || /^(秘密|机密|绝密|特密|内部)/.test(t) || /^(特急|加急|平急)/.test(t)));
     if (protectedRole) return p;

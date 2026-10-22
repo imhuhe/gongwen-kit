@@ -29,6 +29,7 @@ const { textOf, rowCells, tableRanges } = require("../lib/table-read");
 async function readDocx(file) {
   const zip = await JSZip.loadAsync(fs.readFileSync(file));
   const xml = await zip.file("word/document.xml").async("string");
+  const styles = zip.file("word/styles.xml") ? await zip.file("word/styles.xml").async("string") : "";
 
   // 表格区间。段落在不在表里，有几条规则要分开看——表里的「1.2」是个
   // 数值，正文里的「1.2 」是个编号，同一个形状两种意思。开标签带属性
@@ -75,7 +76,7 @@ async function readDocx(file) {
     tableAligns.push(aligns);
   }
 
-  return { paras, tables, tableAligns, xml };
+  return { paras, tables, tableAligns, xml, styles };
 }
 
 // 抠掉成对引号/书名号内的内容，只留一个占位空格，供文本类规则使用。
@@ -87,11 +88,22 @@ const unquote = (s) => s.replace(/「[^」]*」/g, "　").replace(/“[^”]*”
 const looksNumeric = (s) => /\d/.test(s) && !/[，、；。]/.test(s);
 
 // ── 规则 ─────────────────────────────────────────────────
-function check(file, { paras, tables, tableAligns, xml }) {
+function check(file, { paras, tables, tableAligns, xml, styles = "" }) {
   const raw = paras.map((p) => p.text).join("\n");
   const text = unquote(raw);
   const hits = [];
   const hints = [];
+  // 中文版 Word 的标题样式 ID 常是 "1"/"2"（名称仍是 heading 1）；只看 ID 会漏。
+  const headingStyles = new Set();
+  const numberedStyles = new Set();
+  for (const m of styles.matchAll(/<w:style\b([^>]*)>([\s\S]*?)<\/w:style>/g)) {
+    if (!/w:type="paragraph"/.test(m[1])) continue;
+    const id = (m[1].match(/w:styleId="([^"]+)"/) || [])[1];
+    const name = ((m[2].match(/<w:name w:val="([^"]+)"/) || [])[1] || "").toLowerCase();
+    if (!id) continue;
+    if (/^heading [1-4]$/.test(name) || /<w:outlineLvl w:val="[0-3]"\/>/.test(m[2])) headingStyles.add(id);
+    if (/<w:numPr>/.test(m[2])) numberedStyles.add(id);
+  }
   // anchors：命中处的原文片段，修复工具（tools/fix-doc.js）按它把批注挂到对应段落
   const add = (rule, detail, anchors = []) => hits.push({ rule, detail, anchors, blocking: true });
   const hint = (rule, detail, anchors = []) => hints.push({ rule, detail, anchors, blocking: false });
@@ -214,7 +226,9 @@ function check(file, { paras, tables, tableAligns, xml }) {
 
   // 17 标题重复编号：h1～h4 自带「一、（一）1.（1）」编号，标题文字里再手写
   //    一套就叠成两个。小数（1.5）不算——点号后跟数字的排除。
-  const dup = paras.filter((p) => /^Heading[1-4]$/.test(p.style) && p.numbered
+  const isHeading = (p) => /^Heading[1-4]$/.test(p.style) || headingStyles.has(p.style);
+  const isNumbered = (p) => p.numbered || numberedStyles.has(p.style);
+  const dup = paras.filter((p) => isHeading(p) && isNumbered(p)
     && /^(?:[一二三四五六七八九十]+[、．.]|（[一二三四五六七八九十]+）|\d{1,2}[.．、](?!\d))/.test(p.text));
   if (dup.length) {
     add("标题重复编号", `${dup.length} 个标题手写了编号，与自动编号叠成两个：「${dup[0].text.slice(0, 20)}」`, dup.map((p) => p.text));

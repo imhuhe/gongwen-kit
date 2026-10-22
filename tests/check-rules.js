@@ -66,6 +66,20 @@ async function withRootKey(file) {
   return out;
 }
 
+async function withChineseHeading(file) {
+  const z = await JSZip.loadAsync(fs.readFileSync(file));
+  let x = await z.file("word/document.xml").async("string");
+  x = x.replace(/w:pStyle w:val="Heading1"/g, 'w:pStyle w:val="1"')
+    .replace(/<w:numPr>[\s\S]*?<\/w:numPr>/g, "");
+  z.file("word/document.xml", x);
+  let st = await z.file("word/styles.xml").async("string");
+  st = st.replace(/w:styleId="Heading1"/g, 'w:styleId="1"');
+  z.file("word/styles.xml", st);
+  const out = path.join(TMP, "cnheading.docx");
+  fs.writeFileSync(out, await z.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
+  return out;
+}
+
 async function withTableAttr(file) {
   const z = await JSZip.loadAsync(fs.readFileSync(file));
   const x = await z.file("word/document.xml").async("string");
@@ -110,6 +124,7 @@ async function withTableAttr(file) {
     align: [docx.AlignmentType.LEFT, docx.AlignmentType.RIGHT],
   })]), "hint", "数值列非数值");
   expect("标题重复编号", "check-doc.js", await build("duphead.docx", [G.h1("一、工作")]), "fail", "标题重复编号");
+  expect("中文样式 ID 标题重复", "check-doc.js", await withChineseHeading(await build("cnhead-base.docx", [G.h1("一、工作")])), "fail", "标题重复编号");
   expect("公文层次序数", "check-doc.js", await build("dotted.docx", [P("1.1 这应写成 一、")]), "fail", "公文层次序数");
   expect("中文数字日期", "check-doc.js", await build("cndate.docx", [P("二〇二六年十月。")]), "fail", "中文数字日期");
   expect("月日编虚位", "check-doc.js", await build("padded.docx", [P("2026 年 05 月 08 日。")]), "fail", "月日编虚位");

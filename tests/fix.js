@@ -201,6 +201,20 @@ const fix = (file, out) => execFileSync("node", [path.join(ROOT, "tools/fix-doc.
       "表格带属性时仍按表格保护");
     ok(!/项目金额/.test(attrXml), "表格头不会被当成标题");
 
+    // 表题没有 keepNext（手写/旧模板常见），靠“紧邻表格”识别
+    const capFile = path.join(TMP, "caption.docx");
+    await mk("caption.docx", [
+      new docx.Paragraph({ alignment: docx.AlignmentType.CENTER, children: [
+        new docx.TextRun({ text: "表 1 说明", font: { eastAsia: "SimHei", ascii: "SimHei" }, size: 28 }),
+      ] }),
+      ...G.table({ head: ["项目", "金额"], widths: [3000, 3000], rows: [["甲", "10"], ["合计", "10"]] }),
+    ]);
+    fix(capFile, path.join(TMP, "caption-out.docx"));
+    const capOut = await docXml(path.join(TMP, "caption-out.docx"));
+    // 表题允许补「首行不缩进」以抵消 Normal 的两字缩进，但字体字号必须保留。
+    ok(/表 1 说明/.test(capOut) && /w:rFonts[^>]*SimHei/.test(capOut) && /<w:sz w:val="28"\/>/.test(capOut),
+      "无 keepNext 的表题字体字号保留");
+
     // 上行文多个签发人：续行只有姓名、右对齐，不能被当成正文
     const signersFile = path.join(TMP, "signers.docx");
     await mk("signers.docx", [
