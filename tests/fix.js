@@ -269,6 +269,17 @@ const fix = (file, out) => execFileSync("node", [path.join(ROOT, "tools/fix-doc.
     ok(/w:rFonts[^>]*KaiTi/.test(sameXml) && /<w:sz w:val="32"\/>/.test(sameXml) && !/正文直接格式/.test(sameReport),
       "字号+签发人同行的楷体与字号保留");
 
+    // 段首全角空格手工缩进：要补「首行不缩进」，否则叠加 Normal 的二字缩进
+    const leadFile = path.join(TMP, "lead-space.docx");
+    await mk("lead-space.docx", [new docx.Paragraph({
+      alignment: docx.AlignmentType.BOTH,
+      children: [new docx.TextRun({ text: "　　手工缩进段：段首两个全角空格。" })],
+    })]);
+    fix(leadFile, path.join(TMP, "lead-space-out.docx"));
+    const leadP = ((await docXml(path.join(TMP, "lead-space-out.docx")))
+      .match(/<w:p(?:\s[^>]*)?>(?:(?!<w:p[\s>])[\s\S])*?手工缩进段[\s\S]*?<\/w:p>/) || [""])[0];
+    ok(/<w:ind w:firstLine="0" w:firstLineChars="0"\/>/.test(leadP), "段首全角空格的手工缩进段补首行不缩进");
+
     // 斜体计数按 run，不按段
     const italFile = path.join(TMP, "ital2.docx");
     await mk("ital2.docx", [new docx.Paragraph({ children: [
