@@ -239,6 +239,36 @@ const fix = (file, out) => execFileSync("node", [path.join(ROOT, "tools/fix-doc.
     ok(citeText.includes("筹划") && /异形词 1 处/.test(citeReport) && !/w:sz w:val="24"/.test(citeXml),
       "正文引用发文字号后仍改异形词、手设字号交还样式");
 
+    // 只有第X条编号（不分章）不能判成条文体
+    const onlyBase = path.join(TMP, "onlytiao-base.docx");
+    execFileSync("node", [path.join(ROOT, "templates", "gongwen-guanli.js"), onlyBase], { encoding: "utf8", stdio: "pipe" });
+    {
+      const z = await JSZip.loadAsync(fs.readFileSync(onlyBase));
+      let numbering = await z.file("word/numbering.xml").async("string");
+      numbering = numbering.replace(/第%1章/g, "第%1条").replace(/第%2条/g, "（%2）");
+      z.file("word/numbering.xml", numbering);
+      fs.writeFileSync(onlyBase, await z.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
+    }
+    const onlyReport = fix(onlyBase, path.join(TMP, "onlytiao-out.docx"));
+    const onlyZ = await JSZip.loadAsync(fs.readFileSync(path.join(TMP, "onlytiao-out.docx")));
+    const onlyStyles = await onlyZ.file("word/styles.xml").async("string");
+    const onlyH1 = (onlyStyles.match(/<w:style\b[^>]*w:styleId="Heading1"[\s\S]*?<\/w:style>/) || [""])[0];
+    ok(!/<w:jc w:val="center"\/>/.test(onlyH1) && /SimHei/.test(onlyH1) && /一级黑体/.test(onlyReport),
+      "只有第X条时不判条文体，Heading1 不居中");
+
+    // 字号 + 制表位 + 签发人同一段：签发人楷体不能被版式规则剥掉
+    const sameFile = path.join(TMP, "signsame.docx");
+    await mk("signsame.docx", [new docx.Paragraph({ children: [
+      new docx.TextRun({ text: "×政发〔2026〕12号", font: { eastAsia: "FangSong", ascii: "FangSong" }, size: 32 }),
+      new docx.TextRun({ text: "\t" }),
+      new docx.TextRun({ text: "签发人：", font: { eastAsia: "FangSong", ascii: "FangSong" }, size: 32 }),
+      new docx.TextRun({ text: "张××", font: { eastAsia: "KaiTi", ascii: "KaiTi" }, size: 32 }),
+    ] })]);
+    const sameReport = fix(sameFile, path.join(TMP, "signsame-out.docx"));
+    const sameXml = await docXml(path.join(TMP, "signsame-out.docx"));
+    ok(/w:rFonts[^>]*KaiTi/.test(sameXml) && /<w:sz w:val="32"\/>/.test(sameXml) && !/正文直接格式/.test(sameReport),
+      "字号+签发人同行的楷体与字号保留");
+
     // 斜体计数按 run，不按段
     const italFile = path.join(TMP, "ital2.docx");
     await mk("ital2.docx", [new docx.Paragraph({ children: [
