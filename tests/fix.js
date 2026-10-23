@@ -333,6 +333,56 @@ const fixForce = (file, out) => execFileSync("node", [path.join(ROOT, "tools/fix
     ok(nRev === 0 && nCom === 0, "标记稿修复仍是 0 修订/0 批注");
   }
 
+  console.log("\n== 样式层/页脚被改乱 ==");
+  {
+    const gen = async (name) => {
+      const f = path.join(TMP, name);
+      execFileSync("node", [path.join(ROOT, "templates", "notice.js"), f], { encoding: "utf8", stdio: "pipe" });
+      return f;
+    };
+    const normalFile = await gen("marked-normal.docx");
+    {
+      const z = await JSZip.loadAsync(fs.readFileSync(normalFile));
+      let st = await z.file("word/styles.xml").async("string");
+      st = st.replace(/(<w:style\b[^>]*w:styleId="Normal"[\s\S]*?<w:rPr>)/,
+        '$1<w:rFonts w:ascii="SimSun" w:eastAsia="SimSun" w:hAnsi="SimSun"/><w:sz w:val="24"/><w:szCs w:val="24"/>');
+      z.file("word/styles.xml", st);
+      fs.writeFileSync(normalFile, await z.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
+    }
+    const normalReport = fix(normalFile, path.join(TMP, "marked-normal-out.docx"));
+    const normalStyles = await (await JSZip.loadAsync(fs.readFileSync(path.join(TMP, "marked-normal-out.docx")))).file("word/styles.xml").async("string");
+    const normalNormal = (normalStyles.match(/<w:style\b[^>]*w:styleId="Normal"[\s\S]*?<\/w:style>/) || [""])[0];
+    ok(!/SimSun/.test(normalNormal) && !/<w:sz w:val="24"\/>/.test(normalNormal) && /正文样式/.test(normalReport),
+      "标记稿改 Normal 样式（宋体小四）后恢复仿宋三号");
+
+    const styleFile = await gen("marked-style.docx");
+    {
+      const z = await JSZip.loadAsync(fs.readFileSync(styleFile));
+      let st = await z.file("word/styles.xml").async("string");
+      st = st.replace(/(<w:style\b[^>]*w:styleId="Heading1"[\s\S]*?<w:rPr>)/,
+        '$1<w:b/><w:color w:val="2E74B5"/>');
+      z.file("word/styles.xml", st);
+      fs.writeFileSync(styleFile, await z.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
+    }
+    const styleReport = fix(styleFile, path.join(TMP, "marked-style-out.docx"));
+    const styleStyles = await (await JSZip.loadAsync(fs.readFileSync(path.join(TMP, "marked-style-out.docx")))).file("word/styles.xml").async("string");
+    const styleH1 = (styleStyles.match(/<w:style\b[^>]*w:styleId="Heading1"[\s\S]*?<\/w:style>/) || [""])[0];
+    ok(!/<w:b\/>/.test(styleH1) && !/2E74B5/.test(styleH1) && /层次标题样式/.test(styleReport),
+      "标记稿改 Heading1 加粗蓝色后恢复黑体");
+
+    const footerFile = await gen("marked-footer.docx");
+    {
+      const z = await JSZip.loadAsync(fs.readFileSync(footerFile));
+      let x = await z.file("word/document.xml").async("string");
+      x = x.replace(/<w:footerReference\b[^>]*\/>/g, "");
+      z.file("word/document.xml", x);
+      fs.writeFileSync(footerFile, await z.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
+    }
+    const footerReport = fix(footerFile, path.join(TMP, "marked-footer-out.docx"));
+    const footerXml = await docXml(path.join(TMP, "marked-footer-out.docx"));
+    ok(/<w:footerReference\b/.test(footerXml) && /页码/.test(footerReport), "标记稿删页脚后补回页码");
+  }
+
   console.log("\n== 合规件不误改 ==");
   for (const t of ["notice", "gongwen-qingshi", "complete", "xinhan", "jiyao", "qiye", "gongwen-guanli"]) {
     const label = t === "gongwen-guanli" ? "公文管理办法" : t;

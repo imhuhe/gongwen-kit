@@ -18,6 +18,7 @@
  *   · 信函/纪要格式自动跳过通用版式（--layout 可强制）；
  *   · 条文体（第X章/第X条）按章小标宋、条仿宋处理，不再套行文体的一级黑体/二级楷体；
  *   · --dry-run 只报告、不写文件；建议对要交付的稿子先跑一遍。
+ *   · 自家出稿的版式结果与输入做语义比对，完全相同才报「版式（未改）」；
  *
  * 改完对输出件重跑三道机检，批注就是机检剩下的那些，所以批注与机检口径一致。
  */
@@ -28,6 +29,7 @@ const path = require("path");
 const JSZip = require("jszip");
 const { parseParagraph, applyEdits, unitalic } = require("../lib/fix/runs");
 const { isDocNoLine, isZhangDoc } = require("../lib/fix/classify");
+const { layoutSignature } = require("../lib/fix/semantic");
 const { editsFor } = require("../lib/fix/text-rules");
 const { fixStyles, fixDocument, fixPackage, redStyleIds, isRed, styleMap, resolveJc } = require("../lib/fix/layout");
 const { addComments, registerComments } = require("../lib/fix/comments");
@@ -182,7 +184,8 @@ function toComments(items) {
 
 (async () => {
   const o = args();
-  const zip = await JSZip.loadAsync(fs.readFileSync(o.file));
+  const origBuf = fs.readFileSync(o.file);
+  let zip = await JSZip.loadAsync(origBuf);
   let docXml = await read(zip, "word/document.xml");
   let styles = await read(zip, "word/styles.xml");
   let rels = await read(zip, "word/_rels/document.xml.rels");
@@ -191,6 +194,10 @@ function toComments(items) {
   const existingComments = await read(zip, "word/comments.xml");
   const core = await read(zip, "docProps/core.xml");
   if (!docXml) { console.error("读不到 word/document.xml，不是 docx？"); process.exit(2); }
+  const orig = { docXml, styles, rels, types, settings };
+  const origZip = await JSZip.loadAsync(origBuf);
+  let origSig = null;
+  try { origSig = await layoutSignature(origZip, orig.docXml, orig.styles); } catch { /* 比对失败就按需要重排处理 */ }
 
   const plain = docXml.split("</w:p>").map(textOf).join("\n");
   // 条文体可能只把「第X章」「第X条」放在自动编号里，正文只有「总则」。
@@ -206,33 +213,13 @@ function toComments(items) {
   let headingIds = {};
   let redStyles = new Set();
   let styleInfo = new Map();
-  // 自家出稿：标记只说明「出自本工具」，不说明现在仍合规。先看版式机检是否
-  // 仍过、正文 run 是否有直接字体字号；都干净才跳过，改乱了照常重排。
+  // 标记只说明「出自本工具」，不再作为跳过依据。版式照常算一遍，再和输入
+  // 做语义比对：完全一致才保留原件并报「版式（未改）」，否则写出并报真实改动。
   const own = /<cp:keywords>[^<]*gongwen-kit:/.test(core);
   if (o.layout) {
     if ((isXinhan || isJiyao) && !o.forceLayout) {
       o.layout = false;
       notes.push(`检测到${isXinhan ? "信函" : "纪要"}格式：版式未改（用 --layout 可强制通用版式）`);
-    }
-  }
-  if (o.layout && own && !o.forceLayout) {
-    let layoutBad = true;
-    let bodyBad = true;
-    try {
-      const doc = await checkDoc.readDocx(o.file);
-      const hits = checkDoc.check(o.file, doc);
-      layoutBad = hits.some((h) => h.rule === "公文版式");
-      const headingIds = {};
-      for (const m of styles.matchAll(/<w:style\b[^>]*w:styleId="([^"]+)"[^>]*>[\s\S]*?<w:name w:val="heading ([1-4])"/gi)) headingIds[m[1]] = +m[2];
-      const probeNotes = [];
-      fixDocument(docXml, { headingIds, titleFont: TITLE_FONT, redStyles: redStyleIds(styles), styles: styleMap(styles) }, probeNotes);
-      bodyBad = probeNotes.some((n) => /正文直接格式|手设行距/.test(n));
-    } catch { /* 探测失败就按需要重排处理，避免把改乱的稿子误判为合规 */ }
-    if (!layoutBad && !bodyBad) {
-      o.layout = false;
-      notes.push("本工具出稿（gongwen-kit 标记）：版式与正文直接格式均未改动，版式未改（用 --layout 可强制）");
-    } else {
-      notes.push("本工具出稿，但检测到版心/正文直接格式已被改动，重新校准");
     }
   }
   if (o.layout) {
@@ -242,6 +229,25 @@ function toComments(items) {
     docXml = fixDocument(docXml, { headingIds, titleFont: TITLE_FONT, redStyles, styles: styleInfo }, notes);
     const pk = fixPackage(zip, { rels, types, settings }, notes);
     ({ rels, types, settings } = pk);
+    let afterSig = null;
+    try { afterSig = await layoutSignature(zip, docXml, styles); } catch { /* 比对失败就保留修复结果 */ }
+    if (origSig && afterSig === origSig) {
+      zip = origZip;
+      docXml = orig.docXml; styles = orig.styles; rels = orig.rels; types = orig.types; settings = orig.settings;
+      styleInfo = styleMap(styles);
+      headingIds = {};
+      for (const m of styles.matchAll(/<w:style\b[^>]*w:styleId="([^"]+)"[^>]*>[\s\S]*?<w:name w:val="heading ([1-4])"/gi)) headingIds[m[1]] = +m[2];
+      redStyles = redStyleIds(styles);
+      notes.length = 0;
+      notes.push(own
+        ? "本工具出稿（gongwen-kit 标记）：版式与正文直接格式均未改动，版式未改（用 --layout 可强制）"
+        : "版式未改（与输入语义相同）");
+      o.layout = false;
+    } else {
+      notes.push(own
+        ? "本工具出稿，但检测到版式/正文格式已被改动，重新校准"
+        : "检测到版式/正文格式需要校准，已直接改");
+    }
   } else {
     styleInfo = styleMap(styles);
     for (const m of styles.matchAll(/<w:style\b[^>]*w:styleId="([^"]+)"[^>]*>[\s\S]*?<w:name w:val="heading ([1-4])"/gi)) headingIds[m[1]] = +m[2];
