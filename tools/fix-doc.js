@@ -29,7 +29,7 @@ const path = require("path");
 const JSZip = require("jszip");
 const { parseParagraph, applyEdits, unitalic } = require("../lib/fix/runs");
 const { isDocNoLine, isZhangDoc } = require("../lib/fix/classify");
-const { layoutSignature } = require("../lib/fix/semantic");
+const { layoutParts, describeLayoutDiff } = require("../lib/fix/semantic");
 const { editsFor } = require("../lib/fix/text-rules");
 const { fixStyles, fixDocument, fixPackage, redStyleIds, isRed, styleMap, resolveJc } = require("../lib/fix/layout");
 const { addComments, registerComments } = require("../lib/fix/comments");
@@ -196,8 +196,9 @@ function toComments(items) {
   if (!docXml) { console.error("读不到 word/document.xml，不是 docx？"); process.exit(2); }
   const orig = { docXml, styles, rels, types, settings };
   const origZip = await JSZip.loadAsync(origBuf);
+  let origParts = null;
   let origSig = null;
-  try { origSig = await layoutSignature(origZip, orig.docXml, orig.styles); } catch { /* 比对失败就按需要重排处理 */ }
+  try { origParts = await layoutParts(origZip, orig.docXml, orig.styles); origSig = JSON.stringify(origParts); } catch { /* 比对失败就按需要重排处理 */ }
 
   const plain = docXml.split("</w:p>").map(textOf).join("\n");
   // 条文体可能只把「第X章」「第X条」放在自动编号里，正文只有「总则」。
@@ -235,8 +236,9 @@ function toComments(items) {
     if (rels) zip.file("word/_rels/document.xml.rels", rels);
     if (types) zip.file("[Content_Types].xml", types);
     if (settings) zip.file("word/settings.xml", settings);
+    let afterParts = null;
     let afterSig = null;
-    try { afterSig = await layoutSignature(zip, docXml, styles); } catch { /* 比对失败就保留修复结果 */ }
+    try { afterParts = await layoutParts(zip, docXml, styles); afterSig = JSON.stringify(afterParts); } catch { /* 比对失败就保留修复结果 */ }
     if (origSig && afterSig === origSig) {
       zip = origZip;
       docXml = orig.docXml; styles = orig.styles; rels = orig.rels; types = orig.types; settings = orig.settings;
@@ -250,9 +252,14 @@ function toComments(items) {
         : "版式未改（与输入语义相同）");
       o.layout = false;
     } else {
+      // 页脚/样式等价物已由语义差异逐项列出；用户稿的标题校准保留原文，方便对照。
+      const titleNote = own ? null : (notes.find((n) => /^公文标题/.test(n)) || null);
+      notes.length = 0;
       notes.push(own
         ? "本工具出稿，但检测到版式/正文格式已被改动，重新校准"
         : "检测到版式/正文格式需要校准，已直接改");
+      if (titleNote) notes.push(titleNote);
+      if (origParts && afterParts) notes.push(...describeLayoutDiff(origParts, afterParts));
     }
   } else {
     styleInfo = styleMap(styles);

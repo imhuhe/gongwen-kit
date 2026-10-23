@@ -352,8 +352,8 @@ const fixForce = (file, out) => execFileSync("node", [path.join(ROOT, "tools/fix
     const normalReport = fix(normalFile, path.join(TMP, "marked-normal-out.docx"));
     const normalStyles = await (await JSZip.loadAsync(fs.readFileSync(path.join(TMP, "marked-normal-out.docx")))).file("word/styles.xml").async("string");
     const normalNormal = (normalStyles.match(/<w:style\b[^>]*w:styleId="Normal"[\s\S]*?<\/w:style>/) || [""])[0];
-    ok(!/SimSun/.test(normalNormal) && !/<w:sz w:val="24"\/>/.test(normalNormal) && /正文样式/.test(normalReport),
-      "标记稿改 Normal 样式（宋体小四）后恢复仿宋三号");
+    ok(!/SimSun/.test(normalNormal) && !/<w:sz w:val="24"\/>/.test(normalNormal) && /正文样式/.test(normalReport)
+      && !/层次标题样式/.test(normalReport), "标记稿改 Normal 样式（宋体小四）后恢复仿宋三号，只报真实项");
 
     const styleFile = await gen("marked-style.docx");
     {
@@ -367,8 +367,8 @@ const fixForce = (file, out) => execFileSync("node", [path.join(ROOT, "tools/fix
     const styleReport = fix(styleFile, path.join(TMP, "marked-style-out.docx"));
     const styleStyles = await (await JSZip.loadAsync(fs.readFileSync(path.join(TMP, "marked-style-out.docx")))).file("word/styles.xml").async("string");
     const styleH1 = (styleStyles.match(/<w:style\b[^>]*w:styleId="Heading1"[\s\S]*?<\/w:style>/) || [""])[0];
-    ok(!/<w:b\/>/.test(styleH1) && !/2E74B5/.test(styleH1) && /层次标题样式/.test(styleReport),
-      "标记稿改 Heading1 加粗蓝色后恢复黑体");
+    ok(!/<w:b\/>/.test(styleH1) && !/2E74B5/.test(styleH1) && /层次标题样式/.test(styleReport)
+      && !/正文样式/.test(styleReport), "标记稿改 Heading1 加粗蓝色后恢复黑体，只报真实项");
 
     const footerFile = await gen("marked-footer.docx");
     {
@@ -380,7 +380,8 @@ const fixForce = (file, out) => execFileSync("node", [path.join(ROOT, "tools/fix
     }
     const footerReport = fix(footerFile, path.join(TMP, "marked-footer-out.docx"));
     const footerXml = await docXml(path.join(TMP, "marked-footer-out.docx"));
-    ok(/<w:footerReference\b/.test(footerXml) && /页码/.test(footerReport), "标记稿删页脚后补回页码");
+    ok(/<w:footerReference\b/.test(footerXml) && /页码/.test(footerReport)
+      && !/正文样式|层次标题样式/.test(footerReport), "标记稿删页脚后补回页码，只报真实项");
 
     const evenOddFile = await gen("marked-evenodd.docx");
     {

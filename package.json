@@ -1,6 +1,6 @@
 {
   "name": "gongwen-kit",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "中文公文（GB/T 9704）生成、修复与机检工具包：文件进文件出、本地运行、可审计",
   "private": true,
   "license": "MIT",
