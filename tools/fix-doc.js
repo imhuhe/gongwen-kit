@@ -229,6 +229,12 @@ function toComments(items) {
     docXml = fixDocument(docXml, { headingIds, titleFont: TITLE_FONT, redStyles, styles: styleInfo }, notes);
     const pk = fixPackage(zip, { rels, types, settings }, notes);
     ({ rels, types, settings } = pk);
+    // 语义比对要读“修复结果”的 settings/rels，先把它们写进当前 zip，不能等后面的 put。
+    zip.file("word/document.xml", docXml);
+    if (styles) zip.file("word/styles.xml", styles);
+    if (rels) zip.file("word/_rels/document.xml.rels", rels);
+    if (types) zip.file("[Content_Types].xml", types);
+    if (settings) zip.file("word/settings.xml", settings);
     let afterSig = null;
     try { afterSig = await layoutSignature(zip, docXml, styles); } catch { /* 比对失败就保留修复结果 */ }
     if (origSig && afterSig === origSig) {

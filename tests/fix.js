@@ -381,6 +381,32 @@ const fixForce = (file, out) => execFileSync("node", [path.join(ROOT, "tools/fix
     const footerReport = fix(footerFile, path.join(TMP, "marked-footer-out.docx"));
     const footerXml = await docXml(path.join(TMP, "marked-footer-out.docx"));
     ok(/<w:footerReference\b/.test(footerXml) && /页码/.test(footerReport), "标记稿删页脚后补回页码");
+
+    const evenOddFile = await gen("marked-evenodd.docx");
+    {
+      const z = await JSZip.loadAsync(fs.readFileSync(evenOddFile));
+      let st = await z.file("word/settings.xml").async("string");
+      st = st.replace(/<w:evenAndOddHeaders\b[^>]*\/>/g, "");
+      z.file("word/settings.xml", st);
+      fs.writeFileSync(evenOddFile, await z.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
+    }
+    const evenOddReport = fix(evenOddFile, path.join(TMP, "marked-evenodd-out.docx"));
+    const evenOddSettings = await (await JSZip.loadAsync(fs.readFileSync(path.join(TMP, "marked-evenodd-out.docx")))).file("word/settings.xml").async("string");
+    ok(/<w:evenAndOddHeaders\b/.test(evenOddSettings) && /重新校准/.test(evenOddReport),
+      "标记稿删 evenAndOddHeaders 后补回（双页页码居左）");
+
+    const cscFile = await gen("marked-csc.docx");
+    {
+      const z = await JSZip.loadAsync(fs.readFileSync(cscFile));
+      let st = await z.file("word/settings.xml").async("string");
+      st = st.replace(/<w:characterSpacingControl\b[^>]*\/>/g, "");
+      z.file("word/settings.xml", st);
+      fs.writeFileSync(cscFile, await z.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
+    }
+    const cscReport = fix(cscFile, path.join(TMP, "marked-csc-out.docx"));
+    const cscSettings = await (await JSZip.loadAsync(fs.readFileSync(path.join(TMP, "marked-csc-out.docx")))).file("word/settings.xml").async("string");
+    ok(/<w:characterSpacingControl\b/.test(cscSettings) && /标点压缩/.test(cscReport),
+      "标记稿删 characterSpacingControl 后补回");
   }
 
   console.log("\n== 合规件不误改 ==");
