@@ -370,6 +370,25 @@ const fixForce = (file, out) => execFileSync("node", [path.join(ROOT, "tools/fix
     ok(!/<w:b\/>/.test(styleH1) && !/2E74B5/.test(styleH1) && /层次标题样式/.test(styleReport)
       && !/正文样式/.test(styleReport), "标记稿改 Heading1 加粗蓝色后恢复黑体，只报真实项");
 
+    // 条文体：Heading1 是「第X章」，报告措辞不能套行文体的「一级黑体」
+    const zhangFile = path.join(TMP, "marked-zhang-style.docx");
+    execFileSync("node", [path.join(ROOT, "templates", "gongwen-guanli.js"), zhangFile], { encoding: "utf8", stdio: "pipe" });
+    {
+      const z = await JSZip.loadAsync(fs.readFileSync(zhangFile));
+      let st = await z.file("word/styles.xml").async("string");
+      st = st.replace(/(<w:style\b[^>]*w:styleId="Heading1"[\s\S]*?<w:rPr>)/,
+        '$1<w:b/><w:color w:val="2E74B5"/>');
+      z.file("word/styles.xml", st);
+      fs.writeFileSync(zhangFile, await z.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
+    }
+    const zhangReport = fix(zhangFile, path.join(TMP, "marked-zhang-style-out.docx"));
+    const zhangStyles = await (await JSZip.loadAsync(fs.readFileSync(path.join(TMP, "marked-zhang-style-out.docx")))).file("word/styles.xml").async("string");
+    const zhangH1 = (zhangStyles.match(/<w:style\b[^>]*w:styleId="Heading1"[\s\S]*?<\/w:style>/) || [""])[0];
+    const zhangFont = process.env.GONGWEN_FONT_TITLE || "方正小标宋简体";
+    ok(/<w:jc w:val="center"\/>/.test(zhangH1) && zhangH1.includes(zhangFont) && /章标题/.test(zhangReport)
+      && !/一级黑体|二级楷体/.test(zhangReport), "条文体改 Heading1 后报章标题与实际字体，不套一级黑体");
+    ok(!/正文样式|版心与网格|页码/.test(zhangReport), "条文体只报真实项（样式层其余项不出现）");
+
     const footerFile = await gen("marked-footer.docx");
     {
       const z = await JSZip.loadAsync(fs.readFileSync(footerFile));
@@ -408,6 +427,48 @@ const fixForce = (file, out) => execFileSync("node", [path.join(ROOT, "tools/fix
     const cscSettings = await (await JSZip.loadAsync(fs.readFileSync(path.join(TMP, "marked-csc-out.docx")))).file("word/settings.xml").async("string");
     ok(/<w:characterSpacingControl\b/.test(cscSettings) && /标点压缩/.test(cscReport),
       "标记稿删 characterSpacingControl 后补回");
+  }
+
+  console.log("\n== 版式报告措辞（直接构造语义签名，单测 describeLayoutDiff / layoutChangeNotes） ==");
+  {
+    const { describeLayoutDiff, layoutChangeNotes } = require("../lib/fix/semantic");
+    const parts = (h1, body = []) => ({
+      styles: { default: {}, styles: { Heading1: h1 } },
+      body,
+      sections: [],
+      settings: { evenAndOddHeaders: true, characterSpacingControl: "compressPunctuation" },
+    });
+    const h1 = (font, jc, extra = {}) => ({ rPr: { font: [font, font, font], sz: 32, b: false, color: "", ...extra }, pPr: { jc } });
+
+    const zhangNotes = describeLayoutDiff(
+      parts(h1("方正小标宋简体", "center", { b: true, color: "2E74B5" })),
+      parts(h1("方正小标宋简体", "center")), { form: "zhang" });
+    ok(zhangNotes.length === 1 && zhangNotes[0] === "层次标题样式（Heading1）：章标题方正小标宋简体、居中",
+      "条文体的 Heading1 写章标题与实际字体，不写一级黑体");
+    const wenNotes = describeLayoutDiff(parts(h1("SimHei", "", { b: true })), parts(h1("SimHei", "")), { form: "wen" });
+    ok(wenNotes.length === 1 && wenNotes[0] === "层次标题样式（Heading1）：一级黑体", "行文体的措辞保持不变");
+
+    // 正文只补首行不缩进：报告不能把字体、行距也写进去
+    const para = (ind) => ({ pPr: { ind, spacing: {} }, runs: [] });
+    const flushOnly = describeLayoutDiff(parts(null, [para({})]), parts(null, [para({ firstLine: "0", firstLineChars: "0" })]));
+    ok(flushOnly.length === 1 && flushOnly[0] === "正文直接格式：原不缩进的段落补「首行不缩进」",
+      "正文只补首行不缩进时只报缩进，不写成字体/行距");
+    const runOnly = describeLayoutDiff(
+      parts(null, [{ pPr: { ind: {}, spacing: {} }, runs: [{ font: ["SimSun", "SimSun", "SimSun"], sz: 24 }] }]),
+      parts(null, [para({})]));
+    ok(runOnly.length === 1 && runOnly[0] === "正文直接格式：直接字体、字号交还样式",
+      "正文只有直接字体字号时，不把行距与缩进也写进去");
+
+    // 语义签名算不出来（origParts 为空）：保留 fixStyles/fixDocument 的逐项说明
+    const fallback = [
+      "正文样式：仿宋三号、首行缩进二字、两端对齐、行距交给网格",
+      "层次标题样式 4 个：章小标宋居中、条与项仿宋，三号，不加粗",
+    ];
+    const kept = layoutChangeNotes({ own: true, before: null, after: null, form: "zhang", fallback });
+    ok(kept.length === 3 && /重新校准/.test(kept[0]) && fallback.every((n) => kept.includes(n)),
+      "版式语义比对算不出来时，保留修复过程的逐项说明");
+    const replaced = layoutChangeNotes({ before: parts(h1("SimHei", "", { b: true })), after: parts(h1("SimHei", "")), fallback: ["不该出现"] });
+    ok(!replaced.includes("不该出现") && replaced.some((n) => /一级黑体/.test(n)), "比对算得出来时不混入回退说明");
   }
 
   console.log("\n== 合规件不误改 ==");

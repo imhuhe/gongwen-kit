@@ -29,7 +29,7 @@ const path = require("path");
 const JSZip = require("jszip");
 const { parseParagraph, applyEdits, unitalic } = require("../lib/fix/runs");
 const { isDocNoLine, isZhangDoc } = require("../lib/fix/classify");
-const { layoutParts, describeLayoutDiff } = require("../lib/fix/semantic");
+const { layoutParts, layoutChangeNotes } = require("../lib/fix/semantic");
 const { editsFor } = require("../lib/fix/text-rules");
 const { fixStyles, fixDocument, fixPackage, redStyleIds, isRed, styleMap, resolveJc } = require("../lib/fix/layout");
 const { addComments, registerComments } = require("../lib/fix/comments");
@@ -253,13 +253,13 @@ function toComments(items) {
       o.layout = false;
     } else {
       // 页脚/样式等价物已由语义差异逐项列出；用户稿的标题校准保留原文，方便对照。
-      const titleNote = own ? null : (notes.find((n) => /^公文标题/.test(n)) || null);
+      const titleNote = own ? "" : (notes.find((n) => /^公文标题/.test(n)) || "");
+      // 语义比对算不出来时（origParts/afterParts 为空）保留修复过程的逐项说明，
+      // 不能只剩一句笼统总述；已经单独提前的标题说明不重复。
+      const fallback = notes.filter((n) => n !== titleNote);
+      const report = layoutChangeNotes({ own, before: origParts, after: afterParts, form, titleNote, fallback });
       notes.length = 0;
-      notes.push(own
-        ? "本工具出稿，但检测到版式/正文格式已被改动，重新校准"
-        : "检测到版式/正文格式需要校准，已直接改");
-      if (titleNote) notes.push(titleNote);
-      if (origParts && afterParts) notes.push(...describeLayoutDiff(origParts, afterParts));
+      notes.push(...report);
     }
   } else {
     styleInfo = styleMap(styles);
