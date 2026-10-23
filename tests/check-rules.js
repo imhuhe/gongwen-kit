@@ -17,6 +17,8 @@ const { spawnSync } = require("child_process");
 const JSZip = require("jszip");
 const docx = require("docx");
 const G = require("../lib/gongwen-core").form("wen");
+const { normalizeDocx } = require("../lib/docx-normalize");
+const pkg = require("../package.json");
 
 const ROOT = path.resolve(__dirname, "..");
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "gongwen-rules-"));
@@ -39,6 +41,7 @@ async function build(name, children, props) {
   });
   const f = path.join(TMP, name);
   fs.writeFileSync(f, await docx.Packer.toBuffer(d));
+  await normalizeDocx(f, pkg.version, { mark: false });
   return f;
 }
 
@@ -62,6 +65,17 @@ async function withRootKey(file) {
   const x = await z.file("word/document.xml").async("string");
   z.file("word/document.xml", x.replace("<w:body>", "<w:body><rootKey>"));
   const out = path.join(TMP, "rootkey.docx");
+  fs.writeFileSync(out, await z.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
+  return out;
+}
+
+async function withDuplicateStyle(file) {
+  const z = await JSZip.loadAsync(fs.readFileSync(file));
+  const st = await z.file("word/styles.xml").async("string");
+  const block = st.match(/<w:style\b[^>]*w:styleId="Title"[\s\S]*?<\/w:style>/);
+  if (!block) throw new Error("styles.xml 里没有 Title 样式");
+  z.file("word/styles.xml", st + block[0]);
+  const out = path.join(TMP, "dupstyle.docx");
   fs.writeFileSync(out, await z.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
   return out;
 }
@@ -125,6 +139,7 @@ async function withTableAttr(file) {
   })]), "hint", "数值列非数值");
   expect("标题重复编号", "check-doc.js", await build("duphead.docx", [G.h1("一、工作")]), "fail", "标题重复编号");
   expect("中文样式 ID 标题重复", "check-doc.js", await withChineseHeading(await build("cnhead-base.docx", [G.h1("一、工作")])), "fail", "标题重复编号");
+  expect("重复 styleId", "check-doc.js", await withDuplicateStyle(await build("dupstyle-base.docx", [...G.title(["关于测试的通知"])])), "fail", "样式重复");
   expect("公文层次序数", "check-doc.js", await build("dotted.docx", [P("1.1 这应写成 一、")]), "fail", "公文层次序数");
   expect("中文数字日期", "check-doc.js", await build("cndate.docx", [P("二〇二六年十月。")]), "fail", "中文数字日期");
   expect("月日编虚位", "check-doc.js", await build("padded.docx", [P("2026 年 05 月 08 日。")]), "fail", "月日编虚位");

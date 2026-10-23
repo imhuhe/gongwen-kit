@@ -107,6 +107,11 @@ function check(file, { paras, tables, tableAligns, xml, styles = "" }) {
   // anchors：命中处的原文片段，修复工具（tools/fix-doc.js）按它把批注挂到对应段落
   const add = (rule, detail, anchors = []) => hits.push({ rule, detail, anchors, blocking: true });
   const hint = (rule, detail, anchors = []) => hints.push({ rule, detail, anchors, blocking: false });
+  // styles.xml 不允许重复 styleId：docx 库默认样式与 externalStyles 叠加时
+  // 会出现两份同名定义，Word 取后一份，WPS/LibreOffice 取哪份不确定。
+  const styleIds = [...styles.matchAll(/<w:style\b[^>]*w:styleId="([^"]+)"/g)].map((m) => m[1]);
+  const dupStyles = [...new Set(styleIds.filter((id, i) => styleIds.indexOf(id) !== i))];
+  if (dupStyles.length) add("样式重复", `styles.xml 重复 styleId：${dupStyles.join("、")}；Word/WPS 取哪一份不确定`);
 
   // 0 有没有正文。放在所有规则之前——内容全丢的稿子后面每条都查不到东西，
   //   于是逐条通过、打印「通过」。这种坏法出现过：序列化坏掉、内容没了、

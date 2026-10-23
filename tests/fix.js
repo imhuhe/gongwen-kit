@@ -22,6 +22,8 @@ const { textOf } = require("../lib/table-read");
 const { build } = require("./messy-docx");
 const G = require("../lib/gongwen-core").form("wen");
 const checkDoc = require("../checks/check-doc");
+const { normalizeDocx } = require("../lib/docx-normalize");
+const pkg = require("../package.json");
 const { scan } = require("../checks/style-scan");
 
 const ROOT = path.join(__dirname, "..");
@@ -42,6 +44,7 @@ const paraSig = (xml) => (xml.match(/<w:p(?:\s[^>]*)?>(?:(?!<w:p[\s>])[\s\S])*?<
 const ME = "gongwen-kit";
 const docXml = async (file) => (await JSZip.loadAsync(fs.readFileSync(file))).file("word/document.xml").async("string");
 const fix = (file, out) => execFileSync("node", [path.join(ROOT, "tools/fix-doc.js"), file, "--out", out], { encoding: "utf8" });
+const fixForce = (file, out) => execFileSync("node", [path.join(ROOT, "tools/fix-doc.js"), file, "--out", out, "--layout"], { encoding: "utf8" });
 
 (async () => {
   console.log("== 规则标本 ==");
@@ -166,6 +169,7 @@ const fix = (file, out) => execFileSync("node", [path.join(ROOT, "tools/fix-doc.
       const d = new docx.Document({ externalStyles: G.externalStyles(), numbering: G.numbering, sections: [{ ...G.sectionProps(), children }] });
       const f = path.join(TMP, name);
       fs.writeFileSync(f, await docx.Packer.toBuffer(d));
+      await normalizeDocx(f, pkg.version, { mark: false });
       return f;
     };
     const red = path.join(TMP, "red.docx");
@@ -249,7 +253,7 @@ const fix = (file, out) => execFileSync("node", [path.join(ROOT, "tools/fix-doc.
       z.file("word/numbering.xml", numbering);
       fs.writeFileSync(onlyBase, await z.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
     }
-    const onlyReport = fix(onlyBase, path.join(TMP, "onlytiao-out.docx"));
+    const onlyReport = fixForce(onlyBase, path.join(TMP, "onlytiao-out.docx"));
     const onlyZ = await JSZip.loadAsync(fs.readFileSync(path.join(TMP, "onlytiao-out.docx")));
     const onlyStyles = await onlyZ.file("word/styles.xml").async("string");
     const onlyH1 = (onlyStyles.match(/<w:style\b[^>]*w:styleId="Heading1"[\s\S]*?<\/w:style>/) || [""])[0];
@@ -280,6 +284,15 @@ const fix = (file, out) => execFileSync("node", [path.join(ROOT, "tools/fix-doc.
       .match(/<w:p(?:\s[^>]*)?>(?:(?!<w:p[\s>])[\s\S])*?手工缩进段[\s\S]*?<\/w:p>/) || [""])[0];
     ok(/<w:ind w:firstLine="0" w:firstLineChars="0"\/>/.test(leadP), "段首全角空格的手工缩进段补首行不缩进");
 
+    // ×、· 在仿宋里是全角，不能按 Latin-1 半角估宽（署名会偏左半个字）
+    const sigRight = async (unit) => {
+      const f = path.join(TMP, `width-${unit}.docx`);
+      await mk(`width-${unit}.docx`, [...G.luokuan({ unit, date: "2026 年 10 月 23 日" })]);
+      const p = ((await docXml(f)).match(/<w:p(?:\s[^>]*)?>(?:(?!<w:p[\s>])[\s\S])*?<\/w:p>/g) || []).find((q) => textOf(q).trim() === unit) || "";
+      return Number((p.match(/<w:ind[^>]*w:right="(\d+)"/) || [])[1]);
+    };
+    ok(await sigRight("××集团") === await sigRight("示范集团"), "× 按全角估宽");
+
     // 斜体计数按 run，不按段
     const italFile = path.join(TMP, "ital2.docx");
     await mk("ital2.docx", [new docx.Paragraph({ children: [
@@ -306,21 +319,32 @@ const fix = (file, out) => execFileSync("node", [path.join(ROOT, "tools/fix-doc.
     execFileSync("node", [path.join(ROOT, "templates", `${t}.js`), src], { encoding: "utf8", stdio: "pipe" });
     const dst = path.join(TMP, `${label}-修订.docx`);
     const before = await docXml(src);
+    const stylesOf = async (f) => (await JSZip.loadAsync(fs.readFileSync(f))).file("word/styles.xml").async("string");
+    const stylesA = await stylesOf(src);
     const r = fix(src, dst);
     const x = await docXml(dst);
+    const stylesB = await stylesOf(dst);
     const nRev = (x.match(/<w:(?:ins|del|rPrChange)\b/g) || []).length;
     const nCom = (x.match(/<w:commentReference\b/g) || []).length;
     const sigA = paraSig(before), sigB = paraSig(x);
     const diff = sigA.findIndex((v, i) => v !== sigB[i]);
     ok(nRev === 0 && nCom === 0 && sigA.length === sigB.length && diff < 0,
       `${label}：修订 ${nRev} 处、批注 ${nCom} 条、段落格式 ${diff < 0 ? "不变" : "第 " + (diff + 1) + " 段变了"}${nRev + nCom || diff >= 0 ? "\n" + r : ""}`);
+    const ids = [...stylesB.matchAll(/<w:style\b[^>]*w:styleId="([^"]+)"/g)].map((m) => m[1]);
+    ok(new Set(ids).size === ids.length, `${label} styles.xml 无重复 styleId`);
+    ok(stylesA === stylesB, `${label} 自家出稿 styles.xml 未被 fix 改`);
+    ok(!/版式（直接改）/.test(r), `${label} 自家出稿不报版式直接改`);
+    if (t === "notice") {
+      const title = (stylesB.match(/<w:style\b[^>]*w:styleId="Title"[\s\S]*?<\/w:style>/) || [""])[0];
+      ok(/w:hAnsi=/.test(title), "标题 Title 带 w:hAnsi，引号不再回退仿宋");
+    }
     if (t === "gongwen-guanli") {
       const z = await JSZip.loadAsync(fs.readFileSync(dst));
       const styles = await z.file("word/styles.xml").async("string");
       const h1 = (styles.match(/<w:style\b[^>]*w:styleId="Heading1"[\s\S]*?<\/w:style>/) || [""])[0];
       const titleFont = process.env.GONGWEN_FONT_TITLE || "方正小标宋简体";
-      ok(/<w:jc w:val="center"\/>/.test(h1) && h1.includes(titleFont) && /章小标宋居中/.test(r),
-        "公文管理办法：章标题样式居中、字体为标题字体，报告口径正确");
+      ok(/<w:jc w:val="center"\/>/.test(h1) && h1.includes(titleFont) && !/版式（直接改）/.test(r),
+        "公文管理办法：章标题样式居中、字体为标题字体，自家出稿不套版式");
     }
   }
 

@@ -13,6 +13,8 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 const docx = require("docx");
 const G = require("../lib/gongwen-core").form("wen");
+const { normalizeDocx } = require("../lib/docx-normalize");
+const pkg = require("../package.json");
 
 const ROOT = path.join(__dirname, "..");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "gwneg-"));
@@ -32,6 +34,7 @@ async function build(name, children, props) {
   });
   const out = path.join(tmp, name);
   fs.writeFileSync(out, await docx.Packer.toBuffer(doc));
+  await normalizeDocx(out, pkg.version, { mark: false });
   return out;
 }
 

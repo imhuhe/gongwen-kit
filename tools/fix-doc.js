@@ -189,6 +189,7 @@ function toComments(items) {
   let types = await read(zip, "[Content_Types].xml");
   let settings = await read(zip, "word/settings.xml");
   const existingComments = await read(zip, "word/comments.xml");
+  const core = await read(zip, "docProps/core.xml");
   if (!docXml) { console.error("读不到 word/document.xml，不是 docx？"); process.exit(2); }
 
   const plain = docXml.split("</w:p>").map(textOf).join("\n");
@@ -205,6 +206,13 @@ function toComments(items) {
   let headingIds = {};
   let redStyles = new Set();
   let styleInfo = new Map();
+  // 自家出稿：writeDoc 在 core.xml 里打了 gongwen-kit 标记，版式已按同一底座生成。
+  // 不重复套一遍；要强制重排用 --layout。
+  const own = /<cp:keywords>[^<]*gongwen-kit:/.test(core);
+  if (o.layout && own && !o.forceLayout) {
+    o.layout = false;
+    notes.push("本工具出稿（gongwen-kit 标记）：版式已按同一底座生成，未改（用 --layout 可强制）");
+  }
   if (o.layout) {
     if ((isXinhan || isJiyao) && !o.forceLayout) {
       o.layout = false;
