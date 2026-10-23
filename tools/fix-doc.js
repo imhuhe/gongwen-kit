@@ -206,17 +206,33 @@ function toComments(items) {
   let headingIds = {};
   let redStyles = new Set();
   let styleInfo = new Map();
-  // 自家出稿：writeDoc 在 core.xml 里打了 gongwen-kit 标记，版式已按同一底座生成。
-  // 不重复套一遍；要强制重排用 --layout。
+  // 自家出稿：标记只说明「出自本工具」，不说明现在仍合规。先看版式机检是否
+  // 仍过、正文 run 是否有直接字体字号；都干净才跳过，改乱了照常重排。
   const own = /<cp:keywords>[^<]*gongwen-kit:/.test(core);
-  if (o.layout && own && !o.forceLayout) {
-    o.layout = false;
-    notes.push("本工具出稿（gongwen-kit 标记）：版式已按同一底座生成，未改（用 --layout 可强制）");
-  }
   if (o.layout) {
     if ((isXinhan || isJiyao) && !o.forceLayout) {
       o.layout = false;
       notes.push(`检测到${isXinhan ? "信函" : "纪要"}格式：版式未改（用 --layout 可强制通用版式）`);
+    }
+  }
+  if (o.layout && own && !o.forceLayout) {
+    let layoutBad = true;
+    let bodyBad = true;
+    try {
+      const doc = await checkDoc.readDocx(o.file);
+      const hits = checkDoc.check(o.file, doc);
+      layoutBad = hits.some((h) => h.rule === "公文版式");
+      const headingIds = {};
+      for (const m of styles.matchAll(/<w:style\b[^>]*w:styleId="([^"]+)"[^>]*>[\s\S]*?<w:name w:val="heading ([1-4])"/gi)) headingIds[m[1]] = +m[2];
+      const probeNotes = [];
+      fixDocument(docXml, { headingIds, titleFont: TITLE_FONT, redStyles: redStyleIds(styles), styles: styleMap(styles) }, probeNotes);
+      bodyBad = probeNotes.some((n) => /正文直接格式|手设行距/.test(n));
+    } catch { /* 探测失败就按需要重排处理，避免把改乱的稿子误判为合规 */ }
+    if (!layoutBad && !bodyBad) {
+      o.layout = false;
+      notes.push("本工具出稿（gongwen-kit 标记）：版式与正文直接格式均未改动，版式未改（用 --layout 可强制）");
+    } else {
+      notes.push("本工具出稿，但检测到版心/正文直接格式已被改动，重新校准");
     }
   }
   if (o.layout) {

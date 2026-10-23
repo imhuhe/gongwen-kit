@@ -312,6 +312,27 @@ const fixForce = (file, out) => execFileSync("node", [path.join(ROOT, "tools/fix
     ok(noOut, "--out 缺值返回 2");
   }
 
+  console.log("\n== 自家出稿被改乱 ==");
+  {
+    const marked = path.join(TMP, "marked-edited.docx");
+    execFileSync("node", [path.join(ROOT, "templates", "notice.js"), marked], { encoding: "utf8", stdio: "pipe" });
+    const z = await JSZip.loadAsync(fs.readFileSync(marked));
+    let x = await z.file("word/document.xml").async("string");
+    x = x.replace(/<w:pgMar[^>]*>/, '<w:pgMar w:top="1440" w:right="1800" w:bottom="1440" w:left="1800" w:header="851" w:footer="992" w:gutter="0"/>');
+    x = x.replace(/(<w:p(?:\s[^>]*)?>(?:(?!<w:p[\s>])[\s\S])*?为规范公文格式[\s\S]*?<\/w:p>)/, (p) =>
+      p.replace('<w:r><w:t', '<w:r><w:rPr><w:rFonts w:ascii="SimSun" w:eastAsia="SimSun" w:hAnsi="SimSun"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr><w:t'));
+    z.file("word/document.xml", x);
+    fs.writeFileSync(marked, await z.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
+    const r = fix(marked, path.join(TMP, "marked-edited-out.docx"));
+    const out = await docXml(path.join(TMP, "marked-edited-out.docx"));
+    ok(/w:top="2098" w:right="1474" w:bottom="1984" w:left="1587"/.test(out), "标记稿改乱版心后重新校准");
+    ok(!/SimSun/.test(out) && !/w:sz w:val="24"/.test(out), "标记稿正文直接字体交还样式");
+    ok(/版心与网格/.test(r) && /正文直接格式/.test(r), "标记稿报告列出真实改动");
+    const nRev = (out.match(/<w:(?:ins|del|rPrChange)\b/g) || []).length;
+    const nCom = (out.match(/<w:commentReference\b/g) || []).length;
+    ok(nRev === 0 && nCom === 0, "标记稿修复仍是 0 修订/0 批注");
+  }
+
   console.log("\n== 合规件不误改 ==");
   for (const t of ["notice", "gongwen-qingshi", "complete", "xinhan", "jiyao", "qiye", "gongwen-guanli"]) {
     const label = t === "gongwen-guanli" ? "公文管理办法" : t;
@@ -345,6 +366,12 @@ const fixForce = (file, out) => execFileSync("node", [path.join(ROOT, "tools/fix
       const titleFont = process.env.GONGWEN_FONT_TITLE || "方正小标宋简体";
       ok(/<w:jc w:val="center"\/>/.test(h1) && h1.includes(titleFont) && !/版式（直接改）/.test(r),
         "公文管理办法：章标题样式居中、字体为标题字体，自家出稿不套版式");
+      const forced = path.join(TMP, "公文管理办法-强制.docx");
+      fixForce(src, forced);
+      const forcedStyles = await (await JSZip.loadAsync(fs.readFileSync(forced))).file("word/styles.xml").async("string");
+      const forcedH1 = (forcedStyles.match(/<w:style\b[^>]*w:styleId="Heading1"[\s\S]*?<\/w:style>/) || [""])[0];
+      ok(/<w:jc w:val="center"\/>/.test(forcedH1) && forcedH1.includes(titleFont),
+        "公文管理办法强制重排仍按章文体（段落 numPr 优先于样式）");
     }
   }
 
